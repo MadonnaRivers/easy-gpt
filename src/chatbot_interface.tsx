@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Send, Trash2, User, MessageSquare, Moon, Sun } from 'lucide-react';
+import { Send, Trash2, User, MessageSquare, Moon, Sun, RotateCw, Copy, Check } from 'lucide-react';
 import { conversationService, messageService, Conversation, Message as DBMessage } from './lib/supabaseClient';
 
 interface Message {
@@ -22,7 +22,12 @@ const ChatbotInterface = () => {
   const [chatHistory, setChatHistory] = useState<ChatHistoryItem[]>([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [currentConversationId, setCurrentConversationId] = useState<string | null>(null);
+  const [currentConversationId, setCurrentConversationId] = useState<string | null>(() => {
+    // Try to restore conversation ID from localStorage
+    const saved = localStorage.getItem('current_conversation_id');
+    return saved || null;
+  });
+  const [copiedMessageId, setCopiedMessageId] = useState<string | number | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const stored = localStorage.getItem('darkMode');
     return stored ? JSON.parse(stored) : false;
@@ -37,10 +42,40 @@ const ChatbotInterface = () => {
     return newId;
   });
 
-  // Load conversations from Supabase on mount
+  // Load conversations from Supabase on mount and restore last conversation
   useEffect(() => {
-    loadConversations();
+    const initializeConversation = async () => {
+      await loadConversations();
+      
+      // If we have a saved conversation ID, load it (force load on mount)
+      if (currentConversationId) {
+        await loadConversation(currentConversationId, true);
+      } else {
+        // Otherwise, load the most recent conversation if available
+        const conversations = await conversationService.getConversations(sessionId);
+        if (conversations.length > 0) {
+          // Sort by updated_at (most recent first)
+          const sorted = [...conversations].sort((a, b) => {
+            const aDate = a.updated_at || a.created_at || '';
+            const bDate = b.updated_at || b.created_at || '';
+            return new Date(bDate).getTime() - new Date(aDate).getTime();
+          });
+          await loadConversation(sorted[0].id!, true);
+        }
+      }
+    };
+    
+    initializeConversation();
   }, [sessionId]);
+
+  // Save conversation ID to localStorage when it changes
+  useEffect(() => {
+    if (currentConversationId) {
+      localStorage.setItem('current_conversation_id', currentConversationId);
+    } else {
+      localStorage.removeItem('current_conversation_id');
+    }
+  }, [currentConversationId]);
 
   // Apply dark mode to document
   useEffect(() => {
@@ -54,6 +89,18 @@ const ChatbotInterface = () => {
 
   const toggleDarkMode = () => {
     setIsDarkMode(!isDarkMode);
+  };
+
+  const handleCopyMessage = async (text: string, messageId: string | number) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedMessageId(messageId);
+      setTimeout(() => {
+        setCopiedMessageId(null);
+      }, 2000);
+    } catch (error) {
+      console.error('Failed to copy text:', error);
+    }
   };
 
   // Stream bot message character by character (ChatGPT-like animation) - 60fps optimized
@@ -331,13 +378,14 @@ const ChatbotInterface = () => {
     setMessages([]);
     setInputText('');
     setCurrentConversationId(null); // Reset to null so next message creates new conversation
+    localStorage.removeItem('current_conversation_id'); // Clear saved conversation ID
     await loadConversations(); // Refresh sidebar to update active states
   };
 
   // Load a conversation and its messages (like ChatGPT - click to continue)
-  const loadConversation = async (conversationId: string) => {
-    // Don't load if it's already the current conversation
-    if (conversationId === currentConversationId) return;
+  const loadConversation = async (conversationId: string, forceLoad = false) => {
+    // Don't load if it's already the current conversation (unless forced)
+    if (!forceLoad && conversationId === currentConversationId && messages.length > 0) return;
     
     setIsLoading(true);
     try {
@@ -404,7 +452,17 @@ const ChatbotInterface = () => {
             </button>
           </div>
           <div className="flex items-center gap-3">
-            {/* Empty space for alignment */}
+            <button
+              onClick={handleNewChat}
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors border ${
+                isDarkMode
+                  ? 'bg-gray-700 hover:bg-gray-600 border-gray-600 text-white'
+                  : 'bg-gray-100 hover:bg-gray-200 border-gray-200 text-gray-700'
+              }`}
+            >
+              <RotateCw size={18} />
+              <span className="text-sm font-medium">New Chat</span>
+            </button>
           </div>
         </div>
 
@@ -480,40 +538,67 @@ const ChatbotInterface = () => {
             </div>
           ) : (
             messages.map((message) => (
-              <div key={message.id} className="flex items-start gap-3 animate-chat-enter">
-                {message.type === 'bot' && (
-                  <div className="flex-shrink-0 w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
-                    <div className="w-6 h-6 bg-red-500 rounded-sm flex items-center justify-center">
-                      {message.isLoading ? (
-                        <div className="flex gap-1">
-                          <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                          <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                          <div className="w-1.5 h-1.5 bg-white rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                        </div>
-                      ) : (
+              message.isLoading ? (
+                // Loading state - just "Thinking" text without bubble
+                <div key={message.id} className="flex items-start gap-3 animate-chat-enter">
+                  {message.type === 'bot' && (
+                    <div className="flex-shrink-0 w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                      <div className="w-6 h-6 bg-red-500 rounded-sm flex items-center justify-center">
                         <svg viewBox="0 0 24 24" fill="white" className="w-4 h-4">
                           <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
                         </svg>
-                      )}
+                      </div>
+                    </div>
+                  )}
+                  <div className="flex-1 flex justify-start items-center">
+                    <div className="flex items-center gap-1.5 py-2">
+                      <span className={`text-[15px] leading-relaxed ${
+                        isDarkMode ? 'text-gray-400' : 'text-gray-500'
+                      }`}>Thinking</span>
+                      <div className="flex gap-1 items-center">
+                        <span className={`inline-block w-1 h-1 rounded-full ${
+                          isDarkMode ? 'bg-gray-500' : 'bg-gray-400'
+                        }`} style={{ 
+                          animation: 'thinking-dot 1.4s ease-in-out infinite',
+                          animationDelay: '0ms'
+                        }}></span>
+                        <span className={`inline-block w-1 h-1 rounded-full ${
+                          isDarkMode ? 'bg-gray-500' : 'bg-gray-400'
+                        }`} style={{ 
+                          animation: 'thinking-dot 1.4s ease-in-out infinite',
+                          animationDelay: '200ms'
+                        }}></span>
+                        <span className={`inline-block w-1 h-1 rounded-full ${
+                          isDarkMode ? 'bg-gray-500' : 'bg-gray-400'
+                        }`} style={{ 
+                          animation: 'thinking-dot 1.4s ease-in-out infinite',
+                          animationDelay: '400ms'
+                        }}></span>
+                      </div>
                     </div>
                   </div>
-                )}
-                
-                <div className={`flex-1 flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[85%] ${
-                    message.type === 'user' 
-                      ? 'bg-red-500 text-white rounded-l-3xl rounded-tr-3xl rounded-br-md border border-red-600/40' 
-                      : isDarkMode
-                        ? 'bg-gray-800 text-gray-100 rounded-r-3xl rounded-tl-3xl rounded-bl-md shadow-sm border border-gray-700'
-                        : 'bg-white text-gray-900 rounded-r-3xl rounded-tl-3xl rounded-bl-md shadow-sm border border-gray-200'
-                  } px-5 py-3`}>
-                    {message.isLoading ? (
-                      <div className="flex gap-1 py-2">
-                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                        <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                </div>
+              ) : (
+                // Normal message with bubble
+                <div key={message.id} className="flex items-start gap-3 animate-chat-enter">
+                  {message.type === 'bot' && (
+                    <div className="flex-shrink-0 w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                      <div className="w-6 h-6 bg-red-500 rounded-sm flex items-center justify-center">
+                        <svg viewBox="0 0 24 24" fill="white" className="w-4 h-4">
+                          <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
+                        </svg>
                       </div>
-                    ) : (
+                    </div>
+                  )}
+                  
+                  <div className={`flex-1 flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[85%] group relative ${
+                      message.type === 'user' 
+                        ? 'bg-red-500 text-white rounded-l-3xl rounded-tr-3xl rounded-br-md border border-red-600/40' 
+                        : isDarkMode
+                          ? 'bg-gray-800 text-gray-100 rounded-r-3xl rounded-tl-3xl rounded-bl-md shadow-sm border border-gray-700'
+                          : 'bg-white text-gray-900 rounded-r-3xl rounded-tl-3xl rounded-bl-md shadow-sm border border-gray-200'
+                    } px-5 py-3`}>
                       <div className="whitespace-pre-wrap text-[15px] leading-relaxed">
                         {message.text}
                         {message.isStreaming && (
@@ -527,16 +612,34 @@ const ChatbotInterface = () => {
                           ></span>
                         )}
                       </div>
-                    )}
+                      {/* Copy button - appears on hover */}
+                      <button
+                        onClick={() => handleCopyMessage(message.text, message.id)}
+                        className={`absolute top-2 right-2 p-1.5 rounded-md transition-all opacity-0 group-hover:opacity-100 ${
+                          message.type === 'user'
+                            ? 'hover:bg-red-600/80 text-white'
+                            : isDarkMode
+                              ? 'hover:bg-gray-700 text-gray-300'
+                              : 'hover:bg-gray-100 text-gray-600'
+                        }`}
+                        title="Copy message"
+                      >
+                        {copiedMessageId === message.id ? (
+                          <Check size={16} className="text-green-500" />
+                        ) : (
+                          <Copy size={16} />
+                        )}
+                      </button>
+                    </div>
                   </div>
-                </div>
 
-                {message.type === 'user' && (
-                  <div className="flex-shrink-0 w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
-                    <User size={20} className="text-red-500" />
-                  </div>
-                )}
-              </div>
+                  {message.type === 'user' && (
+                    <div className="flex-shrink-0 w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                      <User size={20} className="text-red-500" />
+                    </div>
+                  )}
+                </div>
+              )
             ))
           )}
         </div>

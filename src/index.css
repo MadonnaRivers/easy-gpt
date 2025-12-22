@@ -48,6 +48,18 @@ body {
   }
 }
 
+/* Thinking dots animation - ChatGPT-like */
+@keyframes thinking-dot {
+  0%, 60%, 100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
 /* Optimize for GPU acceleration */
 .animate-chat-enter,
 .animate-chat-enter * {
