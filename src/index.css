@@ -68,3 +68,20 @@ body {
   transform: translateZ(0);
 }
 
+/* Message slide-up animation (ChatGPT-like) */
+@keyframes message-slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-message-slide-up {
+  animation: message-slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+

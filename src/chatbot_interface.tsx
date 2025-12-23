@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Send, Trash2, User, MessageSquare, Moon, Sun, RotateCw, Copy, Check } from 'lucide-react';
 import { conversationService, messageService, Conversation, Message as DBMessage } from './lib/supabaseClient';
 
@@ -28,6 +28,8 @@ const ChatbotInterface = () => {
     return saved || null;
   });
   const [copiedMessageId, setCopiedMessageId] = useState<string | number | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const isSendingRef = useRef(false);
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const stored = localStorage.getItem('darkMode');
     return stored ? JSON.parse(stored) : false;
@@ -194,13 +196,14 @@ const ChatbotInterface = () => {
     return date.toLocaleDateString();
   };
   
-  // Use proxy endpoint to avoid CORS issues
-  // Vite proxy will forward /api/n8n to the N8N webhook
-  const N8N_WEBHOOK_URL = '/api/n8n';
+  // N8N webhook URL
+  const N8N_WEBHOOK_URL = 'https://n8n.easyhomefinance.in/webhook/e61a4f26-156f-4802-ae33-743399345186/chat';
 
   const handleSend = async () => {
-    if (!inputText.trim() || isLoading) return;
-
+    // Prevent multiple submissions
+    if (!inputText.trim() || isLoading || isSendingRef.current) return;
+    
+    isSendingRef.current = true;
     const userMessage = inputText.trim();
     
     // Create a NEW conversation if we don't have one (New Chat was clicked)
@@ -222,7 +225,14 @@ const ChatbotInterface = () => {
     // Generate unique message ID
     const messageId = `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
     
-    // Add user message immediately
+    // Clear input immediately for better UX
+    setInputText('');
+    // Reset textarea height
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+    }
+    
+    // Add user message with animation
     const userMsg: Message = {
       id: messageId,
       type: 'user',
@@ -235,7 +245,6 @@ const ChatbotInterface = () => {
       await messageService.addMessage(conversationId, 'user', userMessage);
     }
     
-    setInputText('');
     setIsLoading(true);
 
     // Add loading message
@@ -349,11 +358,11 @@ const ChatbotInterface = () => {
       let errorMessage = '';
       
       if (error instanceof Error && error.message === 'N8N_WEBHOOK_NOT_REGISTERED') {
-        errorMessage = `**⚠️ N8N Workflow Not Activated**\n\nYour N8N workflow needs to be activated!\n\n**To fix this:**\n\n1. Open N8N: **http://localhost:5678**\n2. Find your workflow with webhook ID: \`e61a4f26-156f-4802-ae33-743399345186\`\n3. **Toggle the workflow to ACTIVE** (switch in top-right corner)\n4. Make sure the workflow is saved\n5. Wait a few seconds for N8N to register the webhook\n6. Try sending a message again\n\n**Note:** The workflow must be ACTIVE (green/ON) for production webhooks to work.`;
+        errorMessage = `**⚠️ N8N Workflow Not Activated**\n\nYour N8N workflow needs to be activated!\n\n**To fix this:**\n\n1. Open N8N Dashboard\n2. Find your workflow with webhook ID: \`edf7c50a-2d5f-4e1e-b070-1e4de62e098e\`\n3. **Toggle the workflow to ACTIVE** (switch in top-right corner)\n4. Make sure the workflow is saved\n5. Wait a few seconds for N8N to register the webhook\n6. Try sending a message again\n\n**Note:** The workflow must be ACTIVE (green/ON) for production webhooks to work.`;
       } else if (error instanceof Error && error.message === 'N8N_WORKFLOW_ERROR') {
         errorMessage = `**⚠️ N8N Workflow Execution Error**\n\nGood news: The webhook is working! But there's an error inside your N8N workflow.\n\n**To fix this:**\n\n1. Open N8N: **http://localhost:5678**\n2. Go to **Executions** (left sidebar)\n3. Check the latest execution - it will show the error\n4. Common issues:\n   - Missing or incorrect node configuration\n   - Wrong data format expected\n   - Missing required fields\n   - Code errors in Code/Function nodes\n\n**Request sent:**\n\`\`\`json\n${JSON.stringify({ sessionId: sessionId, action: 'sendMessage', chatInput: userMessage }, null, 2)}\n\`\`\`\n\n**Check N8N Executions tab for detailed error information.**`;
       } else {
-        errorMessage = `**Error:** ${error instanceof Error ? error.message : 'Unknown error'}\n\n**Troubleshooting:**\n\n1. ✅ Is N8N running on port 5678?\n2. ✅ Is the workflow **ACTIVATED** (toggle switch ON)?\n3. ✅ Does the webhook path match: \`/webhook/e61a4f26-156f-4802-ae33-743399345186/chat\`?\n4. ✅ Check N8N **Executions** tab for error details\n\n**Webhook URL:** http://localhost:5678/webhook/e61a4f26-156f-4802-ae33-743399345186/chat`;
+        errorMessage = `**Error:** ${error instanceof Error ? error.message : 'Unknown error'}\n\n**Troubleshooting:**\n\n1. ✅ Is the N8N server accessible?\n2. ✅ Is the workflow **ACTIVATED** (toggle switch ON)?\n3. ✅ Does the webhook path match: \`/webhook/edf7c50a-2d5f-4e1e-b070-1e4de62e098e\`?\n4. ✅ Check N8N **Executions** tab for error details\n\n**Webhook URL:** https://n8n.easyhomefinance.in/webhook/edf7c50a-2d5f-4e1e-b070-1e4de62e098e`;
       }
       
       setMessages(prev => prev.filter(msg => msg.id !== loadingMessageId).concat([{
@@ -363,14 +372,23 @@ const ChatbotInterface = () => {
       }]));
     } finally {
       setIsLoading(false);
+      isSendingRef.current = false;
     }
   };
 
-  const handleKeyPress = (e) => {
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
+  };
+
+  const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInputText(e.target.value);
+    // Auto-resize textarea
+    const textarea = e.target;
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`; // Max height 200px
   };
 
   const handleNewChat = async () => {
@@ -580,7 +598,9 @@ const ChatbotInterface = () => {
                 </div>
               ) : (
                 // Normal message with bubble
-                <div key={message.id} className="flex items-start gap-3 animate-chat-enter">
+                <div key={message.id} className={`flex items-start gap-3 animate-chat-enter ${
+                  message.type === 'user' ? 'animate-message-slide-up' : ''
+                }`}>
                   {message.type === 'bot' && (
                     <div className="flex-shrink-0 w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
                       <div className="w-6 h-6 bg-red-500 rounded-sm flex items-center justify-center">
@@ -651,35 +671,48 @@ const ChatbotInterface = () => {
             : 'bg-white border-gray-200'
         }`}>
           <div className="max-w-4xl mx-auto">
-            <div className="flex items-center gap-3">
-              <input
-                type="text"
-                value={inputText}
-                onChange={(e) => setInputText(e.target.value)}
-                onKeyPress={handleKeyPress}
-                placeholder="Type a message..."
-                className={`flex-1 rounded-full px-5 py-3 text-[15px] focus:outline-none focus:ring-2 focus:ring-red-500 transition-colors ${
-                  isDarkMode
-                    ? 'bg-gray-800 text-white placeholder-gray-400'
-                    : 'bg-gray-100 text-gray-900 placeholder-gray-500'
-                }`}
-              />
+            <div className="flex items-end gap-3">
+              <div className="flex-1 relative">
+                <textarea
+                  ref={textareaRef}
+                  value={inputText}
+                  onChange={handleTextareaChange}
+                  onKeyDown={handleKeyPress}
+                  placeholder="Type a message..."
+                  rows={1}
+                  disabled={isLoading || isSendingRef.current}
+                  className={`w-full rounded-2xl px-5 py-[7px] text-[15px] focus:outline-none focus:ring-2 focus:ring-red-500 transition-all resize-none overflow-hidden ${
+                    isLoading || isSendingRef.current
+                      ? 'opacity-60 cursor-not-allowed'
+                      : ''
+                  } ${
+                    isDarkMode
+                      ? 'bg-gray-800 text-white placeholder-gray-400'
+                      : 'bg-gray-100 text-gray-900 placeholder-gray-500'
+                  }`}
+                  style={{
+                    minHeight: '38px',
+                    maxHeight: '200px',
+                    lineHeight: '1.4'
+                  }}
+                />
+              </div>
               <button 
                 onClick={handleSend}
-                className={`flex-shrink-0 w-11 h-11 rounded-lg flex items-center justify-center transition-all duration-200 ease-out ${
+                className={`flex-shrink-0 w-12 h-12 rounded-full flex items-center justify-center border transition-all duration-200 ease-out mb-0.5 -translate-y-0.5 ${
                   inputText.trim() && !isLoading
                     ? isDarkMode
-                      ? 'bg-red-500 hover:bg-red-600 text-white shadow-sm hover:shadow-md active:scale-95'
-                      : 'bg-red-500 hover:bg-red-600 text-white shadow-sm hover:shadow-md active:scale-95'
+                      ? 'bg-red-500 hover:bg-red-600 text-white shadow-sm hover:shadow-md active:scale-95 border-transparent'
+                      : 'bg-red-500 hover:bg-red-600 text-white shadow-sm hover:shadow-md active:scale-95 border-transparent'
                     : isDarkMode
-                      ? 'bg-gray-700/50 text-gray-500 cursor-not-allowed opacity-60'
-                      : 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-60'
+                      ? 'bg-gray-800 text-gray-500 cursor-not-allowed opacity-60 border-gray-700'
+                      : 'bg-gray-200 text-gray-400 cursor-not-allowed opacity-60 border-gray-200'
                 }`}
                 disabled={!inputText.trim() || isLoading}
                 title={inputText.trim() ? 'Send message' : 'Enter a message'}
               >
                 <Send 
-                  size={21} 
+                  size={22} 
                   className={inputText.trim() && !isLoading ? 'text-white' : ''} 
                   strokeWidth={inputText.trim() && !isLoading ? 2.5 : 2}
                 />
