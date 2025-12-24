@@ -1,6 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Send, Trash2, User, MessageSquare, Moon, Sun, RotateCw, Copy, Check } from 'lucide-react';
+import { ArrowRight, Trash2, User, MessageSquare, Moon, Sun, RotateCw, Copy, Check } from 'lucide-react';
 import { conversationService, messageService, Conversation, Message as DBMessage } from './lib/supabaseClient';
+
+// Basic text formatter to support bold/italic/code while escaping HTML
+const renderMessageText = (text: string) => {
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  const withBold = escaped.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  const withItalic = withBold.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  const withCode = withItalic.replace(/`([^`]+)`/g, '<code>$1</code>');
+  return withCode;
+};
 
 interface Message {
   id: number | string;
@@ -501,58 +513,6 @@ const ChatbotInterface = () => {
               <p className={`mb-8 transition-colors ${
                 isDarkMode ? 'text-gray-400' : 'text-gray-500'
               }`}>Ask me anything about Easy Home Finance Limited</p>
-              
-              {/* Suggestion Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-w-2xl w-full">
-                <button className={`rounded-xl p-4 transition-colors text-left border ${
-                  isDarkMode
-                    ? 'bg-gray-800 border-gray-700 hover:bg-gray-700'
-                    : 'bg-white border-gray-200 hover:bg-gray-50'
-                }`}>
-                  <p className={`font-medium mb-1 transition-colors ${
-                    isDarkMode ? 'text-white' : 'text-gray-900'
-                  }`}>📝 Loan Application</p>
-                  <p className={`text-sm transition-colors ${
-                    isDarkMode ? 'text-gray-400' : 'text-gray-500'
-                  }`}>Guide me through the loan application process</p>
-                </button>
-                <button className={`rounded-xl p-4 transition-colors text-left border ${
-                  isDarkMode
-                    ? 'bg-gray-800 border-gray-700 hover:bg-gray-700'
-                    : 'bg-white border-gray-200 hover:bg-gray-50'
-                }`}>
-                  <p className={`font-medium mb-1 transition-colors ${
-                    isDarkMode ? 'text-white' : 'text-gray-900'
-                  }`}>💳 Credit Score</p>
-                  <p className={`text-sm transition-colors ${
-                    isDarkMode ? 'text-gray-400' : 'text-gray-500'
-                  }`}>What are the CIBIL score requirements?</p>
-                </button>
-                <button className={`rounded-xl p-4 transition-colors text-left border ${
-                  isDarkMode
-                    ? 'bg-gray-800 border-gray-700 hover:bg-gray-700'
-                    : 'bg-white border-gray-200 hover:bg-gray-50'
-                }`}>
-                  <p className={`font-medium mb-1 transition-colors ${
-                    isDarkMode ? 'text-white' : 'text-gray-900'
-                  }`}>📋 Documentation</p>
-                  <p className={`text-sm transition-colors ${
-                    isDarkMode ? 'text-gray-400' : 'text-gray-500'
-                  }`}>What documents do I need to submit?</p>
-                </button>
-                <button className={`rounded-xl p-4 transition-colors text-left border ${
-                  isDarkMode
-                    ? 'bg-gray-800 border-gray-700 hover:bg-gray-700'
-                    : 'bg-white border-gray-200 hover:bg-gray-50'
-                }`}>
-                  <p className={`font-medium mb-1 transition-colors ${
-                    isDarkMode ? 'text-white' : 'text-gray-900'
-                  }`}>💰 EMI Calculator</p>
-                  <p className={`text-sm transition-colors ${
-                    isDarkMode ? 'text-gray-400' : 'text-gray-500'
-                  }`}>Help me calculate my monthly EMI</p>
-                </button>
-              </div>
             </div>
           ) : (
             messages.map((message) => (
@@ -620,7 +580,9 @@ const ChatbotInterface = () => {
                           : 'bg-white text-gray-900 rounded-r-3xl rounded-tl-3xl rounded-bl-md shadow-sm border border-gray-200'
                     } px-5 py-3`}>
                       <div className="whitespace-pre-wrap text-[15px] leading-relaxed">
-                        {message.text}
+                        <span
+                          dangerouslySetInnerHTML={{ __html: renderMessageText(message.text) }}
+                        />
                         {message.isStreaming && (
                           <span 
                             className="inline-block w-0.5 h-4 ml-1 bg-gray-500 align-middle" 
@@ -711,8 +673,8 @@ const ChatbotInterface = () => {
                 disabled={!inputText.trim() || isLoading}
                 title={inputText.trim() ? 'Send message' : 'Enter a message'}
               >
-                <Send 
-                  size={22} 
+                <ArrowRight 
+                  size={20} 
                   className={inputText.trim() && !isLoading ? 'text-white' : ''} 
                   strokeWidth={inputText.trim() && !isLoading ? 2.5 : 2}
                 />
