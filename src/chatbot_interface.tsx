@@ -2,16 +2,18 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ArrowRight, Trash2, User, MessageSquare, Moon, Sun, RotateCw, Copy, Check } from 'lucide-react';
 import { conversationService, messageService, Conversation, Message as DBMessage } from './lib/supabaseClient';
 
-// Basic text formatter to support bold/italic/code while escaping HTML
+// Text formatter to support bold text
 const renderMessageText = (text: string) => {
+  // First escape HTML
   const escaped = text
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
+  
+  // Apply markdown formatting (bold)
   const withBold = escaped.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  const withItalic = withBold.replace(/\*(.+?)\*/g, '<em>$1</em>');
-  const withCode = withItalic.replace(/`([^`]+)`/g, '<code>$1</code>');
-  return withCode;
+  
+  return withBold;
 };
 
 interface Message {
