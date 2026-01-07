@@ -6,125 +6,107 @@ import { conversationService, messageService, Conversation, Message as DBMessage
 const renderMessageText = (text: string) => {
   // Remove common greeting/intro lines
   let cleanedText = text
+  // This specific line deletes the intro seen in your image
+    .replace(/^Hello!?\s+Please find below.*?:?\s*\n?/gim, '') 
     .replace(/^Hello!?\s+Here are the (policy highlights|policy-based details|policy details).*?:\s*\n?/gim, '')
-    .replace(/^Hello!?\s+Here are.*?:\s*\n?/gim, '')
-    .replace(/^Here are the (policy highlights|policy-based details|policy details).*?:\s*\n?/gim, '');
+    .trim(); // This removes the empty space left behind
   
-  // First escape HTML
   const escaped = cleanedText
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
   
-  // Split into lines to process
   const lines = escaped.split('\n');
   const processedLines: string[] = [];
-  const listStack: number[] = []; // Track list levels
-  let isFirstContent = true; // Track if this is the first content element
+  const listStack: number[] = [];
+  let isFirstContent = true;
   
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const trimmedLine = line.trim();
     
-    // Handle horizontal rules
+    // 1. Handle Horizontal Rules
     if (trimmedLine.match(/^-{3,}$/)) {
-      // Close any open lists
       while (listStack.length > 0) {
         processedLines.push('</ul>');
         listStack.pop();
       }
-      processedLines.push('<hr style="border: none; border-top: 1px solid rgba(0, 0, 0, 0.1); margin: 0.25rem 0; opacity: 0.3;" />');
+      processedLines.push('<hr style="border: none; border-top: 1px solid rgba(0, 0, 0, 0.1); margin: 0.5rem 0; opacity: 0.3;" />');
       isFirstContent = false;
       continue;
     }
     
-    // Handle markdown headings (### Heading)
+    // 2. Handle Markdown Headings (### Heading)
     const headingMatch = trimmedLine.match(/^(#{1,6})\s+(.+)$/);
     if (headingMatch) {
-      // Close any open lists
       while (listStack.length > 0) {
         processedLines.push('</ul>');
         listStack.pop();
       }
       const level = headingMatch[1].length;
       const headingText = headingMatch[2];
-      const fontSize = level === 1 ? '1.15rem' : level === 2 ? '1.08rem' : '1.8rem';
-      const fontWeight = 'bold';
-      // Remove top margin for the first heading
-      const marginTop = isFirstContent ? '0' : (level <= 2 ? '0.5rem' : '0.3rem');
-      processedLines.push(`<h${Math.min(level, 6)} style="font-size: ${fontSize}; font-weight: ${fontWeight}; margin: ${marginTop} 0 1.5rem 0; line-height: 0.50;">${headingText}</h${Math.min(level, 6)}>`);
+      const fontSize = level === 1 ? '1.5rem' : level === 2 ? '1.35rem' : '1.7rem';
+      // Reduced top margin from 1rem to 0.5rem
+      const marginTop = isFirstContent ? '0' : '0.8rem'; 
+      processedLines.push(`<h${Math.min(level, 6)} style="font-size: ${fontSize}; font-weight: bold; margin: ${marginTop} 0 0.4rem 0; line-height: 1.3;">${headingText}</h${Math.min(level, 6)}>`);
       isFirstContent = false;
       continue;
     }
     
-    // Check if it's a bullet point (starts with "- ")
-    const bulletMatch = trimmedLine.match(/^-\s+(.+)$/);
+    // 3. Handle Bullet Points
+    const bulletMatch = trimmedLine.match(/^[-*•]\s+(.+)$/); // Added support for * and •
     
     if (bulletMatch) {
-      // Calculate indentation level (count leading spaces)
       const leadingSpaces = line.match(/^(\s*)/)?.[1]?.length || 0;
-      // Determine level: 0-3 spaces = level 0, 4-7 = level 1, 8+ = level 2
       const currentLevel = Math.min(Math.floor(leadingSpaces / 4), 2);
       
-      // Close lists if we're going back to a lower level
-      while (listStack.length > 0 && listStack[listStack.length - 1] >= currentLevel) {
+      while (listStack.length > 0 && listStack[listStack.length - 1] > currentLevel) {
         processedLines.push('</ul>');
         listStack.pop();
       }
       
-      // Open new list if needed
       if (listStack.length === 0 || listStack[listStack.length - 1] < currentLevel) {
-        const marginLeft = currentLevel === 0 ? '1rem' : currentLevel === 1 ? '2rem' : '3rem';
-        processedLines.push(`<ul style="list-style-type: disc; margin: 0.15rem 0 0.15rem ${marginLeft}; padding-left: 0.75rem; line-height: 1.4;">`);
+        const marginLeft = currentLevel === 0 ? '1.25rem' : `${1.25 + (currentLevel * 1)}rem`;
+        // Reduced list margin from 0.375rem to 0.125rem
+        processedLines.push(`<ul style="list-style-type: disc; margin: 0.125rem 0; padding-left: 0; margin-left: ${marginLeft}; line-height: 1.5;">`);
         listStack.push(currentLevel);
       }
       
-      // Extract the bullet content
       const content = bulletMatch[1];
-      // Check if content ends with ":" (likely a sub-heading)
       const isSubHeading = content.trim().endsWith(':');
-      const itemStyle = isSubHeading 
-        ? 'margin-bottom: 0.2rem; line-height: 1.4; padding-left: 0.25rem; font-weight: 500;'
-        : 'margin-bottom: 0.4rem; line-height: 1.4; padding-left: 0.25rem;';
+      // Tightened bottom margin on list items
+      const itemStyle = `margin-bottom: 0.125rem; line-height: 1.5; ${isSubHeading ? 'font-weight: 600;' : ''}`;
       processedLines.push(`<li style="${itemStyle}">${content}</li>`);
       isFirstContent = false;
     } else {
-      // Close all open lists
+      // 4. Handle Regular Text & Paragraphs
       while (listStack.length > 0) {
         processedLines.push('</ul>');
         listStack.pop();
       }
       
-      // Handle empty lines
       if (trimmedLine === '') {
-        processedLines.push('<br />');
-      } else {
-        // Check if line ends with ":" (might be a sub-heading in context)
-        const isSubHeading = trimmedLine.endsWith(':') && trimmedLine.length < 100;
-        if (isSubHeading) {
-          processedLines.push(`<p style="margin: 0.3rem 0 0.2rem 0; line-height: 1.4; font-weight: 500;">${line}</p>`);
-        } else {
-          // Add regular line with proper spacing
-          processedLines.push(`<p style="margin: 0.25rem 0; line-height: 1.4;">${line}</p>`);
+        // Only add a break if the previous line wasn't also a break (prevent triple spacing)
+        if (processedLines[processedLines.length - 1] !== '<div style="height: 0.5rem"></div>') {
+           processedLines.push('<div style="height: 0.5rem"></div>'); 
         }
+      } else {
+        const isSubHeading = trimmedLine.endsWith(':') && trimmedLine.length < 100;
+        // Reduced paragraph margins from 0.5rem to 0.2rem
+        const marginY = isFirstContent ? '0 0 0.2rem 0' : (isSubHeading ? '0.4rem 0 0.2rem 0' : '0.15rem 0');
+        processedLines.push(`<p style="margin: ${marginY}; line-height: 1.5; ${isSubHeading ? 'font-weight: 600;' : ''}">${line}</p>`);
         isFirstContent = false;
       }
     }
   }
   
-  // Close any remaining open lists
   while (listStack.length > 0) {
     processedLines.push('</ul>');
     listStack.pop();
   }
   
-  // Join lines back together
   let result = processedLines.join('\n');
-  
-  // Apply markdown formatting (bold) - works everywhere
   result = result.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  
-  // Apply italic formatting
   result = result.replace(/\*(.+?)\*/g, '<em>$1</em>');
   
   return result;
@@ -694,10 +676,11 @@ const ChatbotInterface = () => {
                         : isDarkMode
                           ? 'bg-gray-800 text-gray-100 rounded-r-3xl rounded-tl-3xl rounded-bl-md shadow-sm border border-gray-700'
                           : 'bg-white text-gray-900 rounded-r-3xl rounded-tl-3xl rounded-bl-md shadow-sm border border-gray-200'
-                    } px-5 py-3`}>
-                      <div className="text-[15px] leading-relaxed prose prose-sm max-w-none">
+                    } px-5 py-4`}>
+                      <div className="text-[15px] leading-relaxed prose prose-sm max-w-none" style={{ wordWrap: 'break-word', overflowWrap: 'break-word' }}>
                         <div
                           dangerouslySetInnerHTML={{ __html: renderMessageText(message.text) }}
+                          style={{ lineHeight: '1.6' }}
                         />
                         {message.isStreaming && (
                           <span 
