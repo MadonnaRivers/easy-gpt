@@ -159,11 +159,14 @@ const ChatbotInterface = () => {
     const initializeConversation = async () => {
       await loadConversations();
       
-      // If we have a saved conversation ID, load it (force load on mount)
-      if (currentConversationId) {
+      // Check if user started a new chat - don't auto-load in that case
+      const newChatStarted = localStorage.getItem('new_chat_started') === 'true';
+      
+      // If we have a saved conversation ID and new chat wasn't started, load it
+      if (currentConversationId && !newChatStarted) {
         await loadConversation(currentConversationId, true);
-      } else {
-        // Otherwise, load the most recent conversation if available
+      } else if (!newChatStarted) {
+        // Otherwise, load the most recent conversation if available (only if new chat wasn't started)
         const conversations = await conversationService.getConversations(sessionId);
         if (conversations.length > 0) {
           // Sort by updated_at (most recent first)
@@ -175,6 +178,7 @@ const ChatbotInterface = () => {
           await loadConversation(sorted[0].id!, true);
         }
       }
+      // If newChatStarted is true, don't load any conversation - keep it empty
     };
     
     initializeConversation();
@@ -321,12 +325,14 @@ const ChatbotInterface = () => {
     if (!conversationId) {
       // Create new conversation with first message as title
       const title = userMessage.length > 50 ? userMessage.substring(0, 50) + '...' : userMessage;
-      // Get employee_code from localStorage if available
+      // Get employee_code and source from localStorage if available
       const employeeCode = localStorage.getItem('employee_code') || undefined;
-      const newConversation = await conversationService.createConversation(sessionId, title, employeeCode);
+      const source = localStorage.getItem('source') || undefined;
+      const newConversation = await conversationService.createConversation(sessionId, title, employeeCode, source);
       if (newConversation && newConversation.id) {
         conversationId = newConversation.id;
         setCurrentConversationId(conversationId);
+        localStorage.removeItem('new_chat_started'); // Clear the flag since we created a new conversation
         await loadConversations(); // Refresh sidebar to show new conversation
       } else {
         console.error('Failed to create conversation');
@@ -354,7 +360,8 @@ const ChatbotInterface = () => {
     
     // Save user message to database
     if (conversationId) {
-      await messageService.addMessage(conversationId, 'user', userMessage);
+      const source = localStorage.getItem('source') || undefined;
+      await messageService.addMessage(conversationId, 'user', userMessage, source);
     }
     
     setIsLoading(true);
@@ -443,7 +450,8 @@ const ChatbotInterface = () => {
       
       // Save bot response to database
       if (conversationId) {
-        await messageService.addMessage(conversationId, 'bot', responseText);
+        const source = localStorage.getItem('source') || undefined;
+        await messageService.addMessage(conversationId, 'bot', responseText, source);
         // Update conversation title with first user message if it's a new conversation
         const conv = await conversationService.getConversation(conversationId);
         if (conv && userMessage.length <= 50) {
@@ -509,6 +517,7 @@ const ChatbotInterface = () => {
     setInputText('');
     setCurrentConversationId(null); // Reset to null so next message creates new conversation
     localStorage.removeItem('current_conversation_id'); // Clear saved conversation ID
+    localStorage.setItem('new_chat_started', 'true'); // Flag to prevent auto-load on refresh
     await loadConversations(); // Refresh sidebar to update active states
   };
 

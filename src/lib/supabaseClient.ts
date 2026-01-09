@@ -21,6 +21,7 @@ export interface Conversation {
   session_id: string;
   title: string;
   employee_code?: string; // Employee code (string format)
+  source?: string; // Source (string format)
   created_at?: string;
   updated_at?: string;
 }
@@ -30,6 +31,7 @@ export interface Message {
   conversation_id: string;
   role: 'user' | 'bot';
   content: string;
+  source?: string; // Source (string format)
   created_at?: string;
 }
 
@@ -47,13 +49,14 @@ export interface File {
 // Conversation operations
 export const conversationService = {
   // Create a new conversation
-  async createConversation(sessionId: string, title: string, employeeCode?: string): Promise<Conversation | null> {
+  async createConversation(sessionId: string, title: string, employeeCode?: string, source?: string): Promise<Conversation | null> {
     const { data, error } = await supabase
       .from('conversations')
       .insert({
         session_id: sessionId,
         title: title,
         employee_code: employeeCode || null,
+        source: source || null,
       })
       .select()
       .single();
@@ -136,13 +139,14 @@ export const conversationService = {
 // Message operations
 export const messageService = {
   // Add a message to a conversation
-  async addMessage(conversationId: string, role: 'user' | 'bot', content: string): Promise<Message | null> {
+  async addMessage(conversationId: string, role: 'user' | 'bot', content: string, source?: string): Promise<Message | null> {
     const { data, error } = await supabase
       .from('messages')
       .insert({
         conversation_id: conversationId,
         role,
         content,
+        source: source || null,
       })
       .select()
       .single();

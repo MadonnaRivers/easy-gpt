@@ -523,6 +523,9 @@ const Dashboard = () => {
                   {selectedConversation.employee_code && (
                     <span className="mr-3">Employee Code: <strong>{selectedConversation.employee_code}</strong></span>
                   )}
+                  {selectedConversation.source && (
+                    <span className="mr-3">Source: <strong>{selectedConversation.source}</strong></span>
+                  )}
                   Created: {formatDate(selectedConversation.created_at || '')} • 
                   Updated: {formatDate(selectedConversation.updated_at || '')}
                 </div>
