@@ -20,6 +20,7 @@ export interface Conversation {
   id?: string;
   session_id: string;
   title: string;
+  employee_code?: string; // Employee code (string format)
   created_at?: string;
   updated_at?: string;
 }
@@ -35,12 +36,13 @@ export interface Message {
 // Conversation operations
 export const conversationService = {
   // Create a new conversation
-  async createConversation(sessionId: string, title: string): Promise<Conversation | null> {
+  async createConversation(sessionId: string, title: string, employeeCode?: string): Promise<Conversation | null> {
     const { data, error } = await supabase
       .from('conversations')
       .insert({
         session_id: sessionId,
         title: title,
+        employee_code: employeeCode || null,
       })
       .select()
       .single();

@@ -321,7 +321,9 @@ const ChatbotInterface = () => {
     if (!conversationId) {
       // Create new conversation with first message as title
       const title = userMessage.length > 50 ? userMessage.substring(0, 50) + '...' : userMessage;
-      const newConversation = await conversationService.createConversation(sessionId, title);
+      // Get employee_code from localStorage if available
+      const employeeCode = localStorage.getItem('employee_code') || undefined;
+      const newConversation = await conversationService.createConversation(sessionId, title, employeeCode);
       if (newConversation && newConversation.id) {
         conversationId = newConversation.id;
         setCurrentConversationId(conversationId);
