@@ -1,11 +1,21 @@
-import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { MessageSquare, Trash2, Moon, Sun, ArrowLeft, Search, X } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { MessageSquare, Trash2, Moon, Sun, Search, X, Upload, FileText, History, CheckCircle } from 'lucide-react';
 import { conversationService, messageService, Conversation, Message } from './lib/supabaseClient';
 import { supabase } from './lib/supabaseClient';
 
+// Webhook URL for file uploads
+const FILE_UPLOAD_WEBHOOK_URL = 'http://localhost:5678/webhook/f40e8d3d-8343-4648-9ed7-9c2f8649c007';
+
+// Local file interface (not from Supabase)
+interface UploadedFile {
+  id: string;
+  filename: string;
+  fileType: string;
+  fileSize: number;
+  uploadedAt: string;
+}
+
 const Dashboard = () => {
-  const navigate = useNavigate();
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const stored = localStorage.getItem('darkMode');
     return stored ? JSON.parse(stored) : false;
@@ -15,6 +25,11 @@ const Dashboard = () => {
   const [conversationMessages, setConversationMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [employeeCodeFilter, setEmployeeCodeFilter] = useState<string>('');
+  const [viewMode, setViewMode] = useState<'conversations' | 'upload'>('conversations');
+  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [showSuccessNotification, setShowSuccessNotification] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', isDarkMode);
@@ -22,8 +37,36 @@ const Dashboard = () => {
   }, [isDarkMode]);
 
   useEffect(() => {
-    loadConversations();
-  }, [employeeCodeFilter]);
+    if (viewMode === 'conversations') {
+      loadConversations();
+    } else {
+      loadLocalFiles();
+    }
+  }, [employeeCodeFilter, viewMode]);
+
+  // Load files from localStorage (local history)
+  const loadLocalFiles = () => {
+    try {
+      const stored = localStorage.getItem('uploaded_files');
+      if (stored) {
+        setUploadedFiles(JSON.parse(stored));
+      } else {
+        setUploadedFiles([]);
+      }
+    } catch (error) {
+      console.error('Error loading local files:', error);
+      setUploadedFiles([]);
+    }
+  };
+
+  // Save files to localStorage
+  const saveLocalFiles = (files: UploadedFile[]) => {
+    try {
+      localStorage.setItem('uploaded_files', JSON.stringify(files));
+    } catch (error) {
+      console.error('Error saving local files:', error);
+    }
+  };
 
   const toggleDarkMode = () => {
     setIsDarkMode(!isDarkMode);
@@ -90,6 +133,82 @@ const Dashboard = () => {
     return date.toLocaleString();
   };
 
+  const formatFileSize = (bytes: number): string => {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsUploading(true);
+      
+      // Create FormData to send file to webhook
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('filename', file.name);
+      formData.append('fileType', file.type || 'application/octet-stream');
+      formData.append('fileSize', file.size.toString());
+      formData.append('uploadedBy', localStorage.getItem('chatbot_session_id') || 'unknown');
+
+      // Send file to webhook
+      const response = await fetch(FILE_UPLOAD_WEBHOOK_URL, {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Upload failed: ${response.status} - ${errorText}`);
+      }
+
+      // Add to local history
+      const newFile: UploadedFile = {
+        id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        filename: file.name,
+        fileType: file.type || 'application/octet-stream',
+        fileSize: file.size,
+        uploadedAt: new Date().toISOString()
+      };
+
+      const updatedFiles = [newFile, ...uploadedFiles];
+      setUploadedFiles(updatedFiles);
+      saveLocalFiles(updatedFiles);
+
+      // Show success notification
+      setShowSuccessNotification(true);
+      setTimeout(() => {
+        setShowSuccessNotification(false);
+      }, 3000); // Auto-dismiss after 3 seconds
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+      alert(`Error uploading file: ${errorMessage}`);
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  const handleDeleteFile = (fileId: string) => {
+    if (!confirm('Are you sure you want to remove this file from history?')) return;
+
+    const updatedFiles = uploadedFiles.filter(f => f.id !== fileId);
+    setUploadedFiles(updatedFiles);
+    saveLocalFiles(updatedFiles);
+  };
+
+  const toggleViewMode = () => {
+    setViewMode(viewMode === 'conversations' ? 'upload' : 'conversations');
+  };
+
   return (
     <div className={`h-screen w-full overflow-hidden transition-colors ${
       isDarkMode 
@@ -103,21 +222,24 @@ const Dashboard = () => {
           : 'bg-white'
       }`}>
         <div className="flex items-center gap-4">
-          <button
-            onClick={() => navigate('/')}
-            className={`p-2 rounded-lg transition-colors ${
-              isDarkMode
-                ? 'hover:bg-gray-700 text-white'
-                : 'hover:bg-gray-100 text-gray-700'
-            }`}
-          >
-            <ArrowLeft size={20} />
-          </button>
           <h1 className={`text-xl font-bold transition-colors ${
             isDarkMode ? 'text-white' : 'text-gray-900'
           }`}>Easy GPT Dashboard</h1>
         </div>
         <div className="flex items-center gap-3">
+          <button
+            onClick={toggleViewMode}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors border ${
+              isDarkMode
+                ? 'bg-gray-700 hover:bg-gray-600 border-gray-600 text-white'
+                : 'bg-gray-100 hover:bg-gray-200 border-gray-200 text-gray-700'
+            }`}
+          >
+            {viewMode === 'conversations' ? <Upload size={18} /> : <History size={18} />}
+            <span className="text-sm font-medium">
+              {viewMode === 'conversations' ? 'Upload Documents' : 'Conversation History'}
+            </span>
+          </button>
           <button
             onClick={toggleDarkMode}
             className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors border ${
@@ -134,7 +256,8 @@ const Dashboard = () => {
 
       {/* Main Content */}
       <div className="flex h-[calc(100vh-73px)]">
-        {/* Left Sidebar - Conversations List */}
+        {/* Left Sidebar - Conversations List (hidden in upload mode) */}
+        {viewMode === 'conversations' && (
         <div className={`w-80 border-r transition-colors ${
           isDarkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'
         }`}>
@@ -246,12 +369,145 @@ const Dashboard = () => {
             </div>
           </div>
         </div>
+        )}
 
-        {/* Right Panel - Conversation Details */}
+        {/* Right Panel - Conversation Details or Upload Interface */}
         <div className={`flex-1 overflow-y-auto transition-colors ${
           isDarkMode ? 'bg-gray-900' : 'bg-gray-50'
         }`}>
-          {selectedConversation ? (
+          {viewMode === 'upload' ? (
+            /* Upload Document Interface */
+            <div className="h-full flex flex-col">
+              {/* Upload Section */}
+              <div className="flex-1 flex items-center justify-center p-8">
+                <div className="max-w-2xl w-full">
+                  <div className="text-center mb-8">
+                    <h2 className={`text-3xl font-bold mb-2 ${
+                      isDarkMode ? 'text-white' : 'text-gray-900'
+                    }`}>
+                      Upload Your Files for Easy GPT
+                    </h2>
+                    <p className={`text-sm ${
+                      isDarkMode ? 'text-gray-400' : 'text-gray-500'
+                    }`}>
+                      Upload documents to enhance your chatbot's knowledge base
+                    </p>
+                  </div>
+
+                  {/* Upload Area */}
+                  <div
+                    onClick={() => !isUploading && fileInputRef.current?.click()}
+                    className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${
+                      isUploading
+                        ? 'opacity-50 cursor-not-allowed'
+                        : 'cursor-pointer hover:border-red-500'
+                    } ${
+                      isDarkMode
+                        ? 'border-gray-700 hover:border-gray-600 bg-gray-800/50'
+                        : 'border-gray-300 hover:border-gray-400 bg-white'
+                    }`}
+                  >
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      onChange={handleFileUpload}
+                      className="hidden"
+                      disabled={isUploading}
+                    />
+                    <div className="flex flex-col items-center">
+                      <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${
+                        isDarkMode ? 'bg-gray-700' : 'bg-gray-100'
+                      }`}>
+                        <Upload size={32} className={isDarkMode ? 'text-gray-400' : 'text-gray-500'} />
+                      </div>
+                      {isUploading ? (
+                        <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                          Uploading to webhook...
+                        </p>
+                      ) : (
+                        <>
+                          <p className={`text-lg font-medium mb-2 ${
+                            isDarkMode ? 'text-white' : 'text-gray-900'
+                          }`}>
+                            Click to upload or drag and drop
+                          </p>
+                          <p className={`text-sm ${
+                            isDarkMode ? 'text-gray-400' : 'text-gray-500'
+                          }`}>
+                            Supported formats: TXT, PDF, DOC, DOCX, and more
+                          </p>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* File History Section */}
+              <div className={`border-t ${
+                isDarkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'
+              }`}>
+                <div className="p-6">
+                  <h3 className={`text-lg font-semibold mb-4 ${
+                    isDarkMode ? 'text-white' : 'text-gray-900'
+                  }`}>
+                    Upload History
+                  </h3>
+                  
+                  {uploadedFiles.length === 0 ? (
+                    <div className="text-center py-8">
+                      <div className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                        No files uploaded yet
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 max-h-64 overflow-y-auto">
+                      {uploadedFiles.map((file) => (
+                        <div
+                          key={file.id}
+                          className={`p-4 rounded-lg border ${
+                            isDarkMode
+                              ? 'bg-gray-800 border-gray-700'
+                              : 'bg-gray-50 border-gray-200'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="flex items-start gap-3 flex-1 min-w-0">
+                              <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                                isDarkMode ? 'bg-gray-700' : 'bg-gray-200'
+                              }`}>
+                                <FileText size={20} className={isDarkMode ? 'text-gray-400' : 'text-gray-500'} />
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className={`font-medium text-sm truncate ${
+                                  isDarkMode ? 'text-white' : 'text-gray-900'
+                                }`}>
+                                  {file.filename}
+                                </div>
+                                <div className={`text-xs mt-1 ${
+                                  isDarkMode ? 'text-gray-400' : 'text-gray-500'
+                                }`}>
+                                  {file.fileType} • {formatFileSize(file.fileSize)} • {formatDate(file.uploadedAt)}
+                                </div>
+                              </div>
+                            </div>
+                            <button
+                              onClick={() => handleDeleteFile(file.id)}
+                              className={`p-2 rounded hover:bg-red-500/20 transition-colors flex-shrink-0 ${
+                                isDarkMode ? 'text-gray-400 hover:text-red-400' : 'text-gray-500 hover:text-red-600'
+                              }`}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ) : selectedConversation ? (
             <div className="p-6">
               <div className={`mb-6 pb-4 border-b ${
                 isDarkMode ? 'border-gray-700' : 'border-gray-200'
@@ -342,6 +598,40 @@ const Dashboard = () => {
           )}
         </div>
       </div>
+
+      {/* Success Notification */}
+      {showSuccessNotification && (
+        <div 
+          className="fixed top-20 right-4 z-50 transition-all duration-300 ease-out"
+          style={{
+            animation: 'slideIn 0.3s ease-out',
+          }}
+        >
+          <div className={`flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg border backdrop-blur-sm ${
+            isDarkMode
+              ? 'bg-green-900/90 border-green-700 text-green-100'
+              : 'bg-green-50 border-green-200 text-green-800'
+          }`}>
+            <CheckCircle size={20} className={`flex-shrink-0 ${isDarkMode ? 'text-green-400' : 'text-green-600'}`} />
+            <div>
+              <p className="font-medium text-sm">Document uploaded successfully!</p>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      <style>{`
+        @keyframes slideIn {
+          from {
+            opacity: 0;
+            transform: translateX(100%);
+          }
+          to {
+            opacity: 1;
+            transform: translateX(0);
+          }
+        }
+      `}</style>
     </div>
   );
 };

@@ -33,6 +33,17 @@ export interface Message {
   created_at?: string;
 }
 
+export interface File {
+  id?: string;
+  filename: string;
+  file_type: string;
+  file_size: number;
+  file_content?: string;
+  uploaded_by?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
 // Conversation operations
 export const conversationService = {
   // Create a new conversation
@@ -164,6 +175,91 @@ export const messageService = {
     }
 
     return data || [];
+  },
+};
+
+// File operations
+export const fileService = {
+  // Check if files table exists
+  async checkTableExists(): Promise<boolean> {
+    const { error } = await supabase
+      .from('files')
+      .select('id')
+      .limit(1);
+
+    // If error is "table not found", return false
+    if (error && (error.code === 'PGRST205' || error.message?.includes('Could not find the table'))) {
+      return false;
+    }
+    
+    return !error;
+  },
+
+  // Upload a file
+  async uploadFile(
+    filename: string,
+    fileType: string,
+    fileSize: number,
+    fileContent: string,
+    uploadedBy?: string
+  ): Promise<File | null> {
+    const { data, error } = await supabase
+      .from('files')
+      .insert({
+        filename,
+        file_type: fileType,
+        file_size: fileSize,
+        file_content: fileContent,
+        uploaded_by: uploadedBy || null,
+      })
+      .select()
+      .single();
+
+    if (error) {
+      // Don't log errors if table doesn't exist (expected)
+      if (error.code !== 'PGRST205' && !error.message?.includes('Could not find the table')) {
+        console.error('Error uploading file:', error);
+      }
+      return null;
+    }
+
+    return data;
+  },
+
+  // Get all files
+  async getFiles(): Promise<File[]> {
+    const { data, error } = await supabase
+      .from('files')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      // Don't log errors if table doesn't exist (expected)
+      if (error.code !== 'PGRST205' && !error.message?.includes('Could not find the table')) {
+        console.error('Error fetching files:', error);
+      }
+      return [];
+    }
+
+    return data || [];
+  },
+
+  // Delete a file
+  async deleteFile(fileId: string): Promise<boolean> {
+    const { error } = await supabase
+      .from('files')
+      .delete()
+      .eq('id', fileId);
+
+    if (error) {
+      // Don't log errors if table doesn't exist (expected)
+      if (error.code !== 'PGRST205' && !error.message?.includes('Could not find the table')) {
+        console.error('Error deleting file:', error);
+      }
+      return false;
+    }
+
+    return true;
   },
 };
 
