@@ -46,6 +46,21 @@ export interface File {
   updated_at?: string;
 }
 
+export interface FileHash {
+  id?: string;
+  data: string; // Hash value
+  file_name: string; // File name
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface FileHash {
+  id?: string;
+  data: string; // Hash value
+  file_name: string; // File name
+  created_at?: string;
+}
+
 // Conversation operations
 export const conversationService = {
   // Create a new conversation
@@ -72,8 +87,7 @@ export const conversationService = {
   // Get all conversations for a user (by session_id)
   async getConversations(sessionId: string): Promise<Conversation[]> {
     const { data, error } = await supabase
-      .from('conversations')
-      .select('*')
+      .from('conversations').select('*')
       .eq('session_id', sessionId)
       .order('updated_at', { ascending: false });
 
@@ -88,8 +102,7 @@ export const conversationService = {
   // Get a single conversation
   async getConversation(conversationId: string): Promise<Conversation | null> {
     const { data, error } = await supabase
-      .from('conversations')
-      .select('*')
+      .from('conversations').select('*')
       .eq('id', conversationId)
       .single();
 
@@ -168,8 +181,7 @@ export const messageService = {
   // Get all messages for a conversation
   async getMessages(conversationId: string): Promise<Message[]> {
     const { data, error } = await supabase
-      .from('messages')
-      .select('*')
+      .from('messages').select('*')
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: true });
 
@@ -233,9 +245,8 @@ export const fileService = {
   // Get all files
   async getFiles(): Promise<File[]> {
     const { data, error } = await supabase
-      .from('files')
-      .select('*')
-      .order('created_at', { ascending: false });
+      .from('files').select('*')
+      .order('id', { ascending: false });
 
     if (error) {
       // Don't log errors if table doesn't exist (expected)
@@ -260,6 +271,42 @@ export const fileService = {
       if (error.code !== 'PGRST205' && !error.message?.includes('Could not find the table')) {
         console.error('Error deleting file:', error);
       }
+      return false;
+    }
+
+    return true;
+  },
+};
+
+// File Hash operations (for file_hash table)
+export const fileHashService = {
+  // Get all files from file_hash table
+  async getFileHashes(): Promise<FileHash[]> {
+    const { data, error } = await supabase
+      .from('file_hash')
+      .select('id, data, file_name')
+      .order('id', { ascending: false });
+
+    if (error) {
+      // Don't log errors if table doesn't exist (expected)
+      if (error.code !== 'PGRST205' && !error.message?.includes('Could not find the table')) {
+        console.error('Error fetching file hashes:', error);
+      }
+      return [];
+    }
+
+    return data || [];
+  },
+
+  // Delete a file hash
+  async deleteFileHash(fileHashId: string): Promise<boolean> {
+    const { error } = await supabase
+      .from('file_hash')
+      .delete()
+      .eq('id', fileHashId);
+
+    if (error) {
+      console.error('Error deleting file hash:', error);
       return false;
     }
 

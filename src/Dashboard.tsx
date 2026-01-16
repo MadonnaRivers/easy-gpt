@@ -1,19 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import { MessageSquare, Trash2, Moon, Sun, Search, X, Upload, FileText, History, CheckCircle } from 'lucide-react';
-import { conversationService, messageService, Conversation, Message } from './lib/supabaseClient';
+import { MessageSquare, Trash2, Moon, Sun, Search, X, Upload, FileText, History, CheckCircle, AlertCircle } from 'lucide-react';
+import { conversationService, messageService, fileHashService, Conversation, Message, FileHash } from './lib/supabaseClient';
 import { supabase } from './lib/supabaseClient';
 
 // Webhook URL for file uploads
-const FILE_UPLOAD_WEBHOOK_URL = 'http://localhost:5678/webhook/f40e8d3d-8343-4648-9ed7-9c2f8649c007';
+const FILE_UPLOAD_WEBHOOK_URL = 'http://localhost:5678/webhook/bfeed288-3ed4-4428-9b28-b39842289d3c';
 
-// Local file interface (not from Supabase)
-interface UploadedFile {
-  id: string;
-  filename: string;
-  fileType: string;
-  fileSize: number;
-  uploadedAt: string;
-}
+// Using FileHash from Supabase instead of local interface
 
 const Dashboard = () => {
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -26,9 +19,11 @@ const Dashboard = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [employeeCodeFilter, setEmployeeCodeFilter] = useState<string>('');
   const [viewMode, setViewMode] = useState<'conversations' | 'upload'>('conversations');
-  const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  const [uploadedFiles, setUploadedFiles] = useState<FileHash[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [showSuccessNotification, setShowSuccessNotification] = useState(false);
+  const [webhookResponse, setWebhookResponse] = useState<any>(null);
+  const [showResponseModal, setShowResponseModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -40,31 +35,24 @@ const Dashboard = () => {
     if (viewMode === 'conversations') {
       loadConversations();
     } else {
-      loadLocalFiles();
+      loadFiles();
     }
   }, [employeeCodeFilter, viewMode]);
 
-  // Load files from localStorage (local history)
-  const loadLocalFiles = () => {
+  // Load files from Supabase file_hash table
+  const loadFiles = async () => {
     try {
-      const stored = localStorage.getItem('uploaded_files');
-      if (stored) {
-        setUploadedFiles(JSON.parse(stored));
-      } else {
-        setUploadedFiles([]);
-      }
+      setIsLoading(true);
+      console.log('Loading files from file_hash table...');
+      const files = await fileHashService.getFileHashes();
+      console.log('Loaded files:', files);
+      console.log('Number of files:', files.length);
+      setUploadedFiles(files);
     } catch (error) {
-      console.error('Error loading local files:', error);
+      console.error('Error loading files:', error);
       setUploadedFiles([]);
-    }
-  };
-
-  // Save files to localStorage
-  const saveLocalFiles = (files: UploadedFile[]) => {
-    try {
-      localStorage.setItem('uploaded_files', JSON.stringify(files));
-    } catch (error) {
-      console.error('Error saving local files:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -133,14 +121,6 @@ const Dashboard = () => {
     return date.toLocaleString();
   };
 
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
-  };
-
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -162,23 +142,38 @@ const Dashboard = () => {
         body: formData
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Upload failed: ${response.status} - ${errorText}`);
+      // Get response text and parse it
+      const responseText = await response.text();
+      let responseData = null;
+      
+      try {
+        responseData = JSON.parse(responseText);
+      } catch (e) {
+        // If not JSON, store as text
+        responseData = responseText;
       }
 
-      // Add to local history
-      const newFile: UploadedFile = {
-        id: `file-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-        filename: file.name,
-        fileType: file.type || 'application/octet-stream',
-        fileSize: file.size,
-        uploadedAt: new Date().toISOString()
-      };
+      // Store the webhook response and show modal
+      setWebhookResponse(responseData);
+      setShowResponseModal(true);
 
-      const updatedFiles = [newFile, ...uploadedFiles];
-      setUploadedFiles(updatedFiles);
-      saveLocalFiles(updatedFiles);
+      // Check if response indicates duplicate file
+      const isDuplicate = 
+        (responseData && typeof responseData === 'object' && responseData.status === 'duplicate') ||
+        (Array.isArray(responseData) && responseData[0]?.status === 'duplicate') ||
+        (responseData?.json && responseData.json.status === 'duplicate');
+
+      if (isDuplicate) {
+        // Don't add to history or show success for duplicates
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error(`Upload failed: ${response.status} - ${JSON.stringify(responseData)}`);
+      }
+
+      // Reload files from Supabase after successful upload
+      await loadFiles();
 
       // Show success notification
       setShowSuccessNotification(true);
@@ -197,12 +192,20 @@ const Dashboard = () => {
     }
   };
 
-  const handleDeleteFile = (fileId: string) => {
+  const handleDeleteFile = async (fileHashId: string) => {
     if (!confirm('Are you sure you want to remove this file from history?')) return;
 
-    const updatedFiles = uploadedFiles.filter(f => f.id !== fileId);
-    setUploadedFiles(updatedFiles);
-    saveLocalFiles(updatedFiles);
+    try {
+      const success = await fileHashService.deleteFileHash(fileHashId);
+      if (success) {
+        await loadFiles(); // Reload from Supabase
+      } else {
+        alert('Failed to delete file. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error deleting file:', error);
+      alert('Error deleting file. Please try again.');
+    }
   };
 
   const toggleViewMode = () => {
@@ -464,7 +467,7 @@ const Dashboard = () => {
                     <div className="space-y-3 max-h-64 overflow-y-auto">
                       {uploadedFiles.map((file) => (
                         <div
-                          key={file.id}
+                          key={file.id || `file-${file.file_name}`}
                           className={`p-4 rounded-lg border ${
                             isDarkMode
                               ? 'bg-gray-800 border-gray-700'
@@ -482,17 +485,17 @@ const Dashboard = () => {
                                 <div className={`font-medium text-sm truncate ${
                                   isDarkMode ? 'text-white' : 'text-gray-900'
                                 }`}>
-                                  {file.filename}
+                                  {file.file_name}
                                 </div>
                                 <div className={`text-xs mt-1 ${
                                   isDarkMode ? 'text-gray-400' : 'text-gray-500'
                                 }`}>
-                                  {file.fileType} • {formatFileSize(file.fileSize)} • {formatDate(file.uploadedAt)}
+                                  ID: {file.id} {file.created_at && `• ${formatDate(file.created_at)}`}
                                 </div>
                               </div>
                             </div>
                             <button
-                              onClick={() => handleDeleteFile(file.id)}
+                              onClick={() => handleDeleteFile(file.id!)}
                               className={`p-2 rounded hover:bg-red-500/20 transition-colors flex-shrink-0 ${
                                 isDarkMode ? 'text-gray-400 hover:text-red-400' : 'text-gray-500 hover:text-red-600'
                               }`}
@@ -618,6 +621,70 @@ const Dashboard = () => {
             <CheckCircle size={20} className={`flex-shrink-0 ${isDarkMode ? 'text-green-400' : 'text-green-600'}`} />
             <div>
               <p className="font-medium text-sm">Document uploaded successfully!</p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Warning Modal */}
+      {showResponseModal && webhookResponse && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className={`relative w-full max-w-md mx-4 rounded-lg shadow-xl border ${
+            isDarkMode
+              ? 'bg-gray-800 border-gray-700'
+              : 'bg-white border-gray-200'
+          }`}>
+            {/* Header */}
+            <div className={`flex items-center justify-between p-4 border-b ${
+              isDarkMode ? 'border-gray-700' : 'border-gray-200'
+            }`}>
+              <div className="flex items-center gap-2">
+                <AlertCircle size={20} className={isDarkMode ? 'text-yellow-400' : 'text-yellow-600'} />
+                <h3 className={`text-lg font-semibold ${
+                  isDarkMode ? 'text-white' : 'text-gray-900'
+                }`}>
+                  Warning
+                </h3>
+              </div>
+              <button
+                onClick={() => {
+                  setShowResponseModal(false);
+                  setWebhookResponse(null);
+                }}
+                className={`p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 ${
+                  isDarkMode ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Content */}
+            <div className="p-6">
+              <p className={`text-base ${
+                isDarkMode ? 'text-gray-200' : 'text-gray-800'
+              }`}>
+                File has been uploaded.
+              </p>
+            </div>
+
+            {/* Footer */}
+            <div className={`flex justify-end gap-2 p-4 border-t ${
+              isDarkMode ? 'border-gray-700' : 'border-gray-200'
+            }`}>
+              <button
+                onClick={() => {
+                  setShowResponseModal(false);
+                  setWebhookResponse(null);
+                }}
+                className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                  isDarkMode
+                    ? 'bg-gray-700 hover:bg-gray-600 text-white'
+                    : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                }`}
+              >
+                Close
+              </button>
             </div>
           </div>
         </div>

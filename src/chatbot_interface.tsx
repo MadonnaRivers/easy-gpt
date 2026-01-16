@@ -6,7 +6,7 @@ import { conversationService, messageService, Conversation, Message as DBMessage
 const renderMessageText = (text: string) => {
   // Remove common greeting/intro lines
   let cleanedText = text
-  // This specific line deletes the intro seen in your image
+  // This specific line deletes the intro seen in your image  
     .replace(/^Hello!?\s+Please find below.*?:?\s*\n?/gim, '') 
     .replace(/^Hello!?\s+Here are the (policy highlights|policy-based details|policy details).*?:\s*\n?/gim, '')
     .trim(); // This removes the empty space left behind
