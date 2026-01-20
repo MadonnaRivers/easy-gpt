@@ -321,7 +321,7 @@ const ChatbotInterface = () => {
     const userMessage = inputText.trim();
     
     // Create a NEW conversation if we don't have one (New Chat was clicked)
-    let conversationId = currentConversationId;
+    let conversationId = currentConversationId; 
     if (!conversationId) {
       // Create new conversation with first message as title
       const title = userMessage.length > 50 ? userMessage.substring(0, 50) + '...' : userMessage;
