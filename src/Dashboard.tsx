@@ -1,10 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
 import { MessageSquare, Trash2, Moon, Sun, Search, X, Upload, FileText, History, CheckCircle, AlertCircle } from 'lucide-react';
-import { conversationService, messageService, fileHashService, Conversation, Message, FileHash } from './lib/supabaseClient';
-import { supabase } from './lib/supabaseClient';
+import { conversationService, fileHashService, Conversation, Message, FileHash } from './lib/supabaseClient';
 
-// Webhook URL for file uploads
-const FILE_UPLOAD_WEBHOOK_URL = 'http://localhost:5678/webhook/bfeed288-3ed4-4428-9b28-b39842289d3c';
+// Webhook URLs for dashboard data (n8n → MySQL)
+const CONVERSATIONS_WEBHOOK_URL = 'https://uat-n8n.easyhomefinance.in/webhook/f5c7f525-6af7-47d4-b080-715892d350f6';
+const MESSAGES_WEBHOOK_URL = 'https://uat-n8n.easyhomefinance.in/webhook/48a93076-1569-4e6d-8a2b-d773ef94655b';
+
+// Webhook URL for file uploads (n8n)
+const FILE_UPLOAD_WEBHOOK_URL = 'https://uat-n8n.easyhomefinance.in/webhook/bfeed288-3ed4-4428-9b28-b39842289d3c';
+// Client-side limit (MB). Server may have a lower limit (413 = Request Entity Too Large).
+const MAX_UPLOAD_FILE_SIZE_MB = 25;
 
 // Using FileHash from Supabase instead of local interface
 
@@ -63,23 +68,25 @@ const Dashboard = () => {
   const loadConversations = async () => {
     try {
       setIsLoading(true);
-      let query = supabase
-        .from('conversations')
-        .select('*')
-        .order('updated_at', { ascending: false })
-        .limit(100);
+      const res = await fetch(CONVERSATIONS_WEBHOOK_URL, { method: 'GET' });
+      if (!res.ok) throw new Error(`Failed to load conversations: ${res.status}`);
+      const data: Conversation[] = await res.json();
+      let list = Array.isArray(data) ? data : [];
 
       // Filter by employee_code if provided
       if (employeeCodeFilter.trim()) {
-        query = query.eq('employee_code', employeeCodeFilter.trim());
+        list = list.filter((c) => (c.employee_code || '').toString().trim() === employeeCodeFilter.trim());
       }
 
-      const { data, error } = await query;
-
-      if (error) throw error;
-      setConversations(data || []);
+      list.sort((a, b) => {
+        const aTime = new Date(a.updated_at || a.created_at || 0).getTime();
+        const bTime = new Date(b.updated_at || b.created_at || 0).getTime();
+        return bTime - aTime;
+      });
+      setConversations(list.slice(0, 100));
     } catch (error) {
       console.error('Error loading conversations:', error);
+      setConversations([]);
     } finally {
       setIsLoading(false);
     }
@@ -88,12 +95,19 @@ const Dashboard = () => {
   const loadConversationMessages = async (conversationId: string) => {
     try {
       setIsLoading(true);
-      const messages = await messageService.getMessages(conversationId);
+      const res = await fetch(MESSAGES_WEBHOOK_URL, { method: 'GET' });
+      if (!res.ok) throw new Error(`Failed to load messages: ${res.status}`);
+      const data: Message[] = await res.json();
+      const list = Array.isArray(data) ? data : [];
+      const messages = list
+        .filter((m) => m.conversation_id === conversationId)
+        .sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
       setConversationMessages(messages);
-      const conv = conversations.find(c => c.id === conversationId);
+      const conv = conversations.find((c) => c.id === conversationId);
       setSelectedConversation(conv || null);
     } catch (error) {
       console.error('Error loading messages:', error);
+      setConversationMessages([]);
     } finally {
       setIsLoading(false);
     }
@@ -125,9 +139,15 @@ const Dashboard = () => {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    const maxBytes = MAX_UPLOAD_FILE_SIZE_MB * 1024 * 1024;
+    if (file.size > maxBytes) {
+      alert(`File is too large. Maximum size is ${MAX_UPLOAD_FILE_SIZE_MB} MB. Your file is ${(file.size / (1024 * 1024)).toFixed(1)} MB.`);
+      return;
+    }
+
     try {
       setIsUploading(true);
-      
+
       // Create FormData to send file to webhook
       const formData = new FormData();
       formData.append('file', file);
@@ -144,12 +164,11 @@ const Dashboard = () => {
 
       // Get response text and parse it
       const responseText = await response.text();
-      let responseData = null;
-      
+      let responseData: unknown = null;
+
       try {
         responseData = JSON.parse(responseText);
-      } catch (e) {
-        // If not JSON, store as text
+      } catch {
         responseData = responseText;
       }
 
@@ -158,37 +177,40 @@ const Dashboard = () => {
       setShowResponseModal(true);
 
       // Check if response indicates duplicate file
-      const isDuplicate = 
-        (responseData && typeof responseData === 'object' && responseData.status === 'duplicate') ||
-        (Array.isArray(responseData) && responseData[0]?.status === 'duplicate') ||
-        (responseData?.json && responseData.json.status === 'duplicate');
+      const isDuplicate =
+        (responseData && typeof responseData === 'object' && (responseData as { status?: string }).status === 'duplicate') ||
+        (Array.isArray(responseData) && (responseData[0] as { status?: string })?.status === 'duplicate') ||
+        ((responseData as { json?: { status?: string } })?.json?.status === 'duplicate');
 
       if (isDuplicate) {
-        // Don't add to history or show success for duplicates
         return;
       }
 
       if (!response.ok) {
+        if (response.status === 413) {
+          throw new Error(
+            'File too large (413). The server has a size limit. Try a smaller file, or ask your admin to increase the server/proxy limit (e.g. nginx client_max_body_size).'
+          );
+        }
         throw new Error(`Upload failed: ${response.status} - ${JSON.stringify(responseData)}`);
       }
 
-      // Reload files from Supabase after successful upload
+      // Reload files after successful upload
       await loadFiles();
 
-      // Show success notification
       setShowSuccessNotification(true);
-      setTimeout(() => {
-        setShowSuccessNotification(false);
-      }, 3000); // Auto-dismiss after 3 seconds
+      setTimeout(() => setShowSuccessNotification(false), 3000);
     } catch (error) {
       console.error('Error uploading file:', error);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-      alert(`Error uploading file: ${errorMessage}`);
+      const err = error instanceof Error ? error.message : 'Unknown error occurred';
+      const isCorsOrNetwork = err === 'Failed to fetch' || err.includes('Load failed');
+      const message = isCorsOrNetwork
+        ? 'Upload failed (network/CORS). Ensure the n8n server allows your origin and accepts the file size. Check the browser console for details.'
+        : err;
+      alert(`Error uploading file: ${message}`);
     } finally {
       setIsUploading(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
