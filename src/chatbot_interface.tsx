@@ -145,7 +145,7 @@ const ChatbotInterface = () => {
     return stored ? JSON.parse(stored) : false;
   });
   
-  const [sessionId] = useState(() => {
+  const [sessionId, setSessionId] = useState(() => {
     // Generate a unique session ID for this chat session (persist in localStorage)
     const stored = localStorage.getItem('chatbot_session_id');
     if (stored) return stored;
@@ -518,6 +518,10 @@ const ChatbotInterface = () => {
     setCurrentConversationId(null); // Reset to null so next message creates new conversation
     localStorage.removeItem('current_conversation_id'); // Clear saved conversation ID
     localStorage.setItem('new_chat_started', 'true'); // Flag to prevent auto-load on refresh
+    // New chat = new session ID so n8n and backend see a distinct conversation
+    const newId = crypto.randomUUID ? crypto.randomUUID() : `session-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    setSessionId(newId);
+    localStorage.setItem('chatbot_session_id', newId);
     await loadConversations(); // Refresh sidebar to update active states
   };
 

@@ -19,13 +19,19 @@ export default defineConfig({
         rewrite: (path) => path.replace(/^\/api\/n8n/, '/webhook/e61a4f26-156f-4802-ae33-743399345186/chat'),
         configure: (proxy, _options) => {
           proxy.on('proxyRes', (proxyRes, req, res) => {
-            // Add CORS headers
             proxyRes.headers['Access-Control-Allow-Origin'] = '*';
             proxyRes.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS';
             proxyRes.headers['Access-Control-Allow-Headers'] = 'Content-Type';
           });
         },
-      }
+      },
+      // File upload: same-origin in dev to avoid CORS; Vite forwards to n8n UAT
+      '/api/upload': {
+        target: 'https://uat-n8n.easyhomefinance.in',
+        changeOrigin: true,
+        rewrite: () => '/webhook/bfeed288-3ed4-4428-9b28-b39842289d3c',
+        secure: true,
+      },
     }
   }
 })
