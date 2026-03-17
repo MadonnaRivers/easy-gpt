@@ -95,9 +95,11 @@ export const conversationService = {
     return conversation;
   },
 
-  async getConversations(sessionId: string): Promise<Conversation[]> {
+  /** All conversations for this employee (ChatGPT-style history per user). */
+  async getConversationsForEmployee(employeeCode: string): Promise<Conversation[]> {
+    const code = (employeeCode || '').trim();
     const convs = getConversationsStore();
-    const filtered = convs.filter((c) => c.session_id === sessionId);
+    const filtered = convs.filter((c) => (c.employee_code || '').trim() === code);
     return filtered.sort((a, b) => {
       const aTime = new Date(a.updated_at || a.created_at || 0).getTime();
       const bTime = new Date(b.updated_at || b.created_at || 0).getTime();

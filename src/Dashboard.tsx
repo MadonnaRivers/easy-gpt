@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { MessageSquare, Trash2, Moon, Sun, Search, X, Upload, FileText, History, CheckCircle, AlertCircle } from 'lucide-react';
 import { conversationService, fileHashService, Conversation, Message, FileHash } from './lib/storage';
 
@@ -250,6 +251,17 @@ const Dashboard = () => {
           <h1 className={`text-xl font-bold transition-colors ${
             isDarkMode ? 'text-white' : 'text-gray-900'
           }`}>Easy GPT Dashboard</h1>
+          <Link
+            to="/"
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors border text-sm font-medium ${
+              isDarkMode
+                ? 'bg-red-600 hover:bg-red-500 border-red-500 text-white'
+                : 'bg-red-500 hover:bg-red-600 border-red-600 text-white'
+            }`}
+          >
+            <MessageSquare size={18} />
+            Easy GPT
+          </Link>
         </div>
         <div className="flex items-center gap-3">
           <button

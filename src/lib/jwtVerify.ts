@@ -52,11 +52,14 @@ export async function verifyJwt(token: string): Promise<JwtVerifyResult> {
 
     // Webhook returns valid: true and user data (employee_code, source, etc.) on success
     if (data && data.valid === true) {
+      const emp =
+        data.employee_code ?? (data as { employeeCode?: string }).employeeCode;
+      const src = data.source ?? (data as { Source?: string }).Source;
       return {
-        valid: true,
-        employee_code: data.employee_code,
-        source: data.source,
         ...data,
+        valid: true as const,
+        employee_code: emp != null ? String(emp) : undefined,
+        source: src != null ? String(src) : undefined,
       };
     }
 

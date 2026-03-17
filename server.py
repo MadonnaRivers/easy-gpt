@@ -17,14 +17,30 @@ To fetch the Easy GPT page after valid token (follow redirect):
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 # Predefined test token (for playing around)
 VALID_TOKEN = "24681379"
+DASHBOARD_COOKIE = "easygpt_dashboard"
 
 app = FastAPI(title="Easy GPT test server")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://127.0.0.1:3000", "http://localhost:3000"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 dist = Path(__file__).parent / "dist"
+
+
+@app.get("/api/dashboard-access")
+def dashboard_access(request: Request):
+    """Dashboard allowed only after login with predefined token (cookie set on /load)."""
+    allowed = request.cookies.get(DASHBOARD_COOKIE) == "1"
+    return JSONResponse({"dashboard": allowed})
 
 
 SESSION_TIMEOUT_HTML = """<!DOCTYPE html>
@@ -64,7 +80,16 @@ async def load_with_token(request: Request):
         token = form.get("token", "")
     token = (token or "").strip()
     if token == VALID_TOKEN:
-        return RedirectResponse(url="/app/", status_code=303)
+        r = RedirectResponse(url="/app/?access=predefined", status_code=303)
+        r.set_cookie(
+            key=DASHBOARD_COOKIE,
+            value="1",
+            max_age=7 * 24 * 3600,
+            path="/",
+            httponly=True,
+            samesite="lax",
+        )
+        return r
     return HTMLResponse(content=SESSION_TIMEOUT_HTML, status_code=200)
 
 

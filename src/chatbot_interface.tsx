@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowRight, User, MessageSquare, Moon, Sun, RotateCw, Copy, Check } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ArrowRight, User, MessageSquare, Moon, Sun, RotateCw, Copy, Check, LayoutDashboard } from 'lucide-react';
 import { conversationService, messageService } from './lib/storage';
 import { verifyJwt } from './lib/jwtVerify';
 
@@ -128,10 +129,36 @@ interface ChatHistoryItem {
   active?: boolean;
 }
 
-type AuthStatus = 'pending' | 'valid' | 'invalid' | null; // null = no token in URL (allow for testing)
+type AuthStatus = 'pending' | 'valid' | 'invalid' | null;
+
+/** Employee code for predefined-token login (FastAPI /load). Sent with chat webhook. */
+const PREDEFINED_INTERNAL_EMPLOYEE = '__EASYGPT_INTERNAL__';
+
+function dashboardAccessUrl(): string {
+  if (import.meta.env.DEV) return '/api/dashboard-access';
+  return `${window.location.origin}/api/dashboard-access`;
+}
+
+function getEmployeeCode(): string {
+  const c = localStorage.getItem('employee_code')?.trim();
+  if (c) return c;
+  return import.meta.env.DEV ? 'DEV_LOCAL' : '';
+}
+
+function initialAuthStatus(): AuthStatus {
+  if (import.meta.env.DEV) return null;
+  if (typeof window === 'undefined') return 'pending';
+  const p = new URLSearchParams(window.location.search);
+  if (p.get('access') === 'predefined') return 'valid';
+  if (p.get('jwt_token')?.trim()) return 'pending';
+  if (sessionStorage.getItem('easygpt_access') === 'predefined') return 'valid';
+  if (sessionStorage.getItem('easygpt_jwt_ok') === '1') return 'valid';
+  return 'invalid';
+}
 
 const ChatbotInterface = () => {
-  const [authStatus, setAuthStatus] = useState<AuthStatus>(null);
+  const [authStatus, setAuthStatus] = useState<AuthStatus>(initialAuthStatus);
+  const [dashboardAllowed, setDashboardAllowed] = useState(false);
   const [messages, setMessages] = useState<Message[]>([]);
   const [, setChatHistory] = useState<ChatHistoryItem[]>([]);
   const [inputText, setInputText] = useState('');
@@ -158,44 +185,99 @@ const ChatbotInterface = () => {
     return newId;
   });
 
-  // JWT verification on load: read jwt_token from URL, verify via n8n webhook
+  // Auth: predefined (?access=predefined), JWT (?jwt_token) via n8n webhook, or session (prod)
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const token = params.get('jwt_token');
-    if (!token || !token.trim()) {
-      setAuthStatus(null); // No token = allow (for local/testing)
+
+    if (params.get('access') === 'predefined') {
+      sessionStorage.setItem('easygpt_access', 'predefined');
+      localStorage.setItem('employee_code', PREDEFINED_INTERNAL_EMPLOYEE);
+      localStorage.setItem('source', 'web');
+      params.delete('access');
+      const q = params.toString();
+      window.history.replaceState({}, '', window.location.pathname + (q ? `?${q}` : '') + window.location.hash);
+      setAuthStatus('valid');
       return;
     }
-    setAuthStatus('pending');
-    verifyJwt(token.trim())
-      .then((result) => {
-        if (result.valid) {
-          if (result.employee_code != null) localStorage.setItem('employee_code', String(result.employee_code));
-          if (result.source != null) localStorage.setItem('source', String(result.source));
-          setAuthStatus('valid');
-        } else {
-          setAuthStatus('invalid');
-        }
-      })
-      .catch(() => setAuthStatus('invalid'));
+
+    const token = params.get('jwt_token')?.trim();
+    if (token) {
+      setAuthStatus('pending');
+      verifyJwt(token)
+        .then((result) => {
+          if (result.valid && result.employee_code) {
+            localStorage.setItem('employee_code', String(result.employee_code));
+            if (result.source != null) localStorage.setItem('source', String(result.source));
+            sessionStorage.setItem('easygpt_access', 'jwt');
+            sessionStorage.setItem('easygpt_jwt_ok', '1');
+            params.delete('jwt_token');
+            const q = params.toString();
+            window.history.replaceState({}, '', window.location.pathname + (q ? `?${q}` : '') + window.location.hash);
+            setAuthStatus('valid');
+          } else {
+            setAuthStatus('invalid');
+          }
+        })
+        .catch(() => setAuthStatus('invalid'));
+      return;
+    }
+
+    if (import.meta.env.DEV) {
+      if (!localStorage.getItem('employee_code')) {
+        localStorage.setItem('employee_code', 'DEV_LOCAL');
+        localStorage.setItem('source', 'web');
+      }
+      setAuthStatus(null);
+      return;
+    }
+
+    if (sessionStorage.getItem('easygpt_access') === 'predefined') {
+      if (!localStorage.getItem('employee_code')) {
+        localStorage.setItem('employee_code', PREDEFINED_INTERNAL_EMPLOYEE);
+      }
+      setAuthStatus('valid');
+      return;
+    }
+    if (sessionStorage.getItem('easygpt_jwt_ok') === '1' && localStorage.getItem('employee_code')) {
+      setAuthStatus('valid');
+      return;
+    }
+    setAuthStatus('invalid');
   }, []);
 
-  // Load conversations (local storage) on mount and restore last conversation
+  // After auth runs: predefined session → show Dashboard; else cookie from POST /load (same host)
   useEffect(() => {
+    if (authStatus === 'pending' || authStatus === 'invalid') {
+      setDashboardAllowed(false);
+      return;
+    }
+    if (sessionStorage.getItem('easygpt_access') === 'predefined') {
+      setDashboardAllowed(true);
+      return;
+    }
+    fetch(dashboardAccessUrl(), { credentials: 'include' })
+      .then((r) => r.json())
+      .then((d) => setDashboardAllowed(!!d.dashboard))
+      .catch(() => setDashboardAllowed(false));
+  }, [authStatus]);
+
+  // Load conversations per employee_code (ChatGPT-style) after auth is ready
+  useEffect(() => {
+    if (authStatus === 'pending' || authStatus === 'invalid') return;
+
     const initializeConversation = async () => {
+      const emp = getEmployeeCode();
+      if (!emp && !import.meta.env.DEV) return;
+
       await loadConversations();
-      
-      // Check if user started a new chat - don't auto-load in that case
+
       const newChatStarted = localStorage.getItem('new_chat_started') === 'true';
-      
-      // If we have a saved conversation ID and new chat wasn't started, load it
+
       if (currentConversationId && !newChatStarted) {
         await loadConversation(currentConversationId, true);
       } else if (!newChatStarted) {
-        // Otherwise, load the most recent conversation if available (only if new chat wasn't started)
-        const conversations = await conversationService.getConversations(sessionId);
+        const conversations = await conversationService.getConversationsForEmployee(emp);
         if (conversations.length > 0) {
-          // Sort by updated_at (most recent first)
           const sorted = [...conversations].sort((a, b) => {
             const aDate = a.updated_at || a.created_at || '';
             const bDate = b.updated_at || b.created_at || '';
@@ -204,11 +286,10 @@ const ChatbotInterface = () => {
           await loadConversation(sorted[0].id!, true);
         }
       }
-      // If newChatStarted is true, don't load any conversation - keep it empty
     };
-    
+
     initializeConversation();
-  }, [sessionId]);
+  }, [authStatus, sessionId]);
 
   // Save conversation ID to localStorage when it changes
   useEffect(() => {
@@ -292,7 +373,8 @@ const ChatbotInterface = () => {
   // Load conversations from database
   const loadConversations = async () => {
     try {
-      const conversations = await conversationService.getConversations(sessionId);
+      const emp = getEmployeeCode();
+      const conversations = await conversationService.getConversationsForEmployee(emp);
       const historyItems: ChatHistoryItem[] = conversations.map(conv => ({
         id: conv.id!,
         title: conv.title,
@@ -342,8 +424,8 @@ const ChatbotInterface = () => {
       // Create new conversation with first message as title
       const title = userMessage.length > 50 ? userMessage.substring(0, 50) + '...' : userMessage;
       // Get employee_code and source from localStorage if available
-      const employeeCode = localStorage.getItem('employee_code') || undefined;
-      const source = localStorage.getItem('source') || undefined;
+      const employeeCode = getEmployeeCode() || undefined;
+      const source = localStorage.getItem('source') || 'web';
       const newConversation = await conversationService.createConversation(sessionId, title, employeeCode, source);
       if (newConversation && newConversation.id) {
         conversationId = newConversation.id;
@@ -391,6 +473,9 @@ const ChatbotInterface = () => {
       isLoading: true
     }]);
 
+    const employeeCode = getEmployeeCode();
+    const source = localStorage.getItem('source') || 'web';
+
     try {
       const response = await fetch(N8N_WEBHOOK_URL, {
         method: 'POST',
@@ -398,10 +483,12 @@ const ChatbotInterface = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          sessionId: sessionId,
+          sessionId,
           action: 'sendMessage',
-          chatInput: userMessage
-        })
+          chatInput: userMessage,
+          employee_code: employeeCode,
+          source,
+        }),
       });
 
       // Get response data first (even if status is not ok)
@@ -496,7 +583,7 @@ const ChatbotInterface = () => {
       if (error instanceof Error && error.message === 'N8N_WEBHOOK_NOT_REGISTERED') {
         errorMessage = `**⚠️ N8N Workflow Not Activated**\n\nYour N8N workflow needs to be activated!\n\n**To fix this:**\n\n1. Open N8N Dashboard\n2. Find your workflow with webhook ID: \`edf7c50a-2d5f-4e1e-b070-1e4de62e098e\`\n3. **Toggle the workflow to ACTIVE** (switch in top-right corner)\n4. Make sure the workflow is saved\n5. Wait a few seconds for N8N to register the webhook\n6. Try sending a message again\n\n**Note:** The workflow must be ACTIVE (green/ON) for production webhooks to work.`;
       } else if (error instanceof Error && error.message === 'N8N_WORKFLOW_ERROR') {
-        errorMessage = `**⚠️ N8N Workflow Execution Error**\n\nGood news: The webhook is working! But there's an error inside your N8N workflow.\n\n**To fix this:**\n\n1. Open N8N: **http://localhost:5678**\n2. Go to **Executions** (left sidebar)\n3. Check the latest execution - it will show the error\n4. Common issues:\n   - Missing or incorrect node configuration\n   - Wrong data format expected\n   - Missing required fields\n   - Code errors in Code/Function nodes\n\n**Request sent:**\n\`\`\`json\n${JSON.stringify({ sessionId: sessionId, action: 'sendMessage', chatInput: userMessage }, null, 2)}\n\`\`\`\n\n**Check N8N Executions tab for detailed error information.**`;
+        errorMessage = `**⚠️ N8N Workflow Execution Error**\n\nGood news: The webhook is working! But there's an error inside your N8N workflow.\n\n**To fix this:**\n\n1. Open N8N: **http://localhost:5678**\n2. Go to **Executions** (left sidebar)\n3. Check the latest execution - it will show the error\n4. Common issues:\n   - Missing or incorrect node configuration\n   - Wrong data format expected\n   - Missing required fields\n   - Code errors in Code/Function nodes\n\n**Request sent:**\n\`\`\`json\n${JSON.stringify({ sessionId, action: 'sendMessage', chatInput: userMessage, employee_code: employeeCode, source }, null, 2)}\n\`\`\`\n\n**Check N8N Executions tab for detailed error information.**`;
       } else {
         errorMessage = `**Error:** ${error instanceof Error ? error.message : 'Unknown error'}\n\n**Troubleshooting:**\n\n1. ✅ Is the N8N server accessible?\n2. ✅ Is the workflow **ACTIVATED** (toggle switch ON)?\n3. ✅ Does the webhook path match: \`/webhook/edf7c50a-2d5f-4e1e-b070-1e4de62e098e\`?\n4. ✅ Check N8N **Executions** tab for error details\n\n**Webhook URL:** https://uat-n8n.easyhomefinance.in/webhook/edf7c50a-2d5f-4e1e-b070-1e4de62e098e`;
       }
@@ -559,8 +646,13 @@ const ChatbotInterface = () => {
       // Set the loaded conversation as current
       setMessages(formattedMessages);
       setCurrentConversationId(conversationId);
-      
-      // Refresh sidebar to update active state
+
+      const conv = await conversationService.getConversation(conversationId);
+      if (conv?.session_id) {
+        setSessionId(conv.session_id);
+        localStorage.setItem('chatbot_session_id', conv.session_id);
+      }
+
       await loadConversations();
       
       // Scroll to bottom to show latest messages
@@ -579,7 +671,17 @@ const ChatbotInterface = () => {
   };
 
   // Session timed out (invalid or expired token)
-  if (authStatus === 'invalid') {
+  if (authStatus === 'invalid' || authStatus === 'pending') {
+    if (authStatus === 'pending') {
+      return (
+        <div className="h-screen w-full flex items-center justify-center bg-gray-50">
+          <div className="text-center">
+            <div className="inline-block w-8 h-8 border-2 border-red-500 border-t-transparent rounded-full animate-spin mb-4" />
+            <p className="text-gray-600">Verifying…</p>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="h-screen w-full flex items-center justify-center bg-gray-100">
         <div className="text-center max-w-md px-6">
@@ -588,18 +690,6 @@ const ChatbotInterface = () => {
           </div>
           <h1 className="text-xl font-bold text-gray-900 mb-2">Session timed out</h1>
           <p className="text-gray-600 mb-6">Please log in again from the admin portal and open Easy GPT.</p>
-        </div>
-      </div>
-    );
-  }
-
-  // Verifying JWT...
-  if (authStatus === 'pending') {
-    return (
-      <div className="h-screen w-full flex items-center justify-center bg-gray-50">
-        <div className="text-center">
-          <div className="inline-block w-8 h-8 border-2 border-red-500 border-t-transparent rounded-full animate-spin mb-4" />
-          <p className="text-gray-600">Verifying...</p>
         </div>
       </div>
     );
@@ -638,6 +728,19 @@ const ChatbotInterface = () => {
             </button>
           </div>
           <div className="flex items-center gap-3">
+            {dashboardAllowed && (
+              <Link
+                to="/dashboard"
+                className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors border text-sm font-medium ${
+                  isDarkMode
+                    ? 'bg-gray-700 hover:bg-gray-600 border-gray-600 text-white'
+                    : 'bg-gray-100 hover:bg-gray-200 border-gray-200 text-gray-700'
+                }`}
+              >
+                <LayoutDashboard size={18} />
+                Dashboard
+              </Link>
+            )}
             <button
               onClick={handleNewChat}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors border ${

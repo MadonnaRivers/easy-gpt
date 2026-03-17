@@ -33,6 +33,10 @@ export default defineConfig({
         rewrite: () => '/webhook/bfeed288-3ed4-4428-9b28-b39842289d3c',
         secure: true,
       },
+      '/api/dashboard-access': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true,
+      },
     }
   }
 })
