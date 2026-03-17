@@ -4,7 +4,7 @@ import Dashboard from './Dashboard';
 
 function App() {
   return (
-    <BrowserRouter>
+    <BrowserRouter basename={import.meta.env.BASE_URL.replace(/\/$/, '')}>
       <Routes>
         <Route path="/" element={<ChatbotInterface />} />
         <Route path="/dashboard" element={<Dashboard />} />

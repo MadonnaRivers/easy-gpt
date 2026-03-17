@@ -53,4 +53,7 @@ lerna-debug.log*
 # OS files
 Thumbs.db
 
-.env
+# Python
+venv/
+__pycache__/
+*.pyc

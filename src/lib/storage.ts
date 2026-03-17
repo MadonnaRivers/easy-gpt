@@ -1,6 +1,5 @@
 /**
- * Local-only storage (no Supabase). Conversations and messages are stored in localStorage
- * so the app works without any backend connection.
+ * Local storage for conversations and messages. File/fileHash services are no-op stubs.
  */
 
 const CONVERSATIONS_KEY = 'chat_conversations';
@@ -10,7 +9,6 @@ function genId(): string {
   return crypto.randomUUID ? crypto.randomUUID() : `id-${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
 }
 
-// Database types (same shape as before)
 export interface Conversation {
   id?: string;
   session_id: string;
@@ -74,7 +72,6 @@ function setMessagesStore(store: Record<string, Message[]>) {
   localStorage.setItem(MESSAGES_KEY, JSON.stringify(store));
 }
 
-// Conversation operations (localStorage)
 export const conversationService = {
   async createConversation(
     sessionId: string,
@@ -133,7 +130,6 @@ export const conversationService = {
   },
 };
 
-// Message operations (localStorage)
 export const messageService = {
   async addMessage(
     conversationId: string,
@@ -154,7 +150,6 @@ export const messageService = {
     list.push(msg);
     store[conversationId] = list;
     setMessagesStore(store);
-    // Update conversation updated_at
     const convs = getConversationsStore();
     const c = convs.find((x) => x.id === conversationId);
     if (c) {
@@ -175,28 +170,6 @@ export const messageService = {
   },
 };
 
-// Stub Supabase client (no network calls) so Dashboard and other imports don't break
-const chain = {
-  then: (resolve: (v: { data: never[]; error: null }) => void) => {
-    resolve({ data: [], error: null });
-    return chain;
-  },
-  catch: () => chain,
-  order: () => chain,
-  limit: () => chain,
-  eq: () => chain,
-  select: () => chain,
-  single: () => chain,
-  insert: () => chain,
-  update: () => chain,
-  delete: () => chain,
-};
-
-export const supabase = {
-  from: (_table: string) => chain,
-};
-
-// File operations (no-op; no Supabase)
 export const fileService = {
   async checkTableExists(): Promise<boolean> {
     return false;
@@ -212,7 +185,6 @@ export const fileService = {
   },
 };
 
-// File Hash operations (no-op; no Supabase)
 export const fileHashService = {
   async getFileHashes(): Promise<FileHash[]> {
     return [];

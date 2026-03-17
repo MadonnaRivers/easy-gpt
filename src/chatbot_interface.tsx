@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ArrowRight, Trash2, User, MessageSquare, Moon, Sun, RotateCw, Copy, Check } from 'lucide-react';
-import { conversationService, messageService, Conversation, Message as DBMessage } from './lib/supabaseClient';
+import { ArrowRight, User, MessageSquare, Moon, Sun, RotateCw, Copy, Check } from 'lucide-react';
+import { conversationService, messageService } from './lib/storage';
+import { verifyJwt } from './lib/jwtVerify';
 
 // Text formatter to support markdown formatting (headings, bold, bullet points, horizontal rules)
 const renderMessageText = (text: string) => {
@@ -127,9 +128,12 @@ interface ChatHistoryItem {
   active?: boolean;
 }
 
+type AuthStatus = 'pending' | 'valid' | 'invalid' | null; // null = no token in URL (allow for testing)
+
 const ChatbotInterface = () => {
+  const [authStatus, setAuthStatus] = useState<AuthStatus>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [chatHistory, setChatHistory] = useState<ChatHistoryItem[]>([]);
+  const [, setChatHistory] = useState<ChatHistoryItem[]>([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [currentConversationId, setCurrentConversationId] = useState<string | null>(() => {
@@ -153,6 +157,28 @@ const ChatbotInterface = () => {
     localStorage.setItem('chatbot_session_id', newId);
     return newId;
   });
+
+  // JWT verification on load: read jwt_token from URL, verify via n8n webhook
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('jwt_token');
+    if (!token || !token.trim()) {
+      setAuthStatus(null); // No token = allow (for local/testing)
+      return;
+    }
+    setAuthStatus('pending');
+    verifyJwt(token.trim())
+      .then((result) => {
+        if (result.valid) {
+          if (result.employee_code != null) localStorage.setItem('employee_code', String(result.employee_code));
+          if (result.source != null) localStorage.setItem('source', String(result.source));
+          setAuthStatus('valid');
+        } else {
+          setAuthStatus('invalid');
+        }
+      })
+      .catch(() => setAuthStatus('invalid'));
+  }, []);
 
   // Load conversations (local storage) on mount and restore last conversation
   useEffect(() => {
@@ -219,57 +245,47 @@ const ChatbotInterface = () => {
     }
   };
 
-  // Stream bot message character by character (ChatGPT-like animation) - 60fps optimized
+  // Stream bot message character by character (ChatGPT-like). Uses setTimeout so it keeps
+  // running when the tab is in the background. Auto-scrolls only if user is near bottom.
   const streamBotMessage = async (messageId: string, fullText: string) => {
     return new Promise<void>((resolve) => {
       let currentIndex = 0;
-      const charsPerFrame = 2; // Characters per frame for smooth 60fps
-      const minDelay = 16; // ~60fps (16.67ms per frame)
-      
+      const charsPerFrame = 2;
+      const minDelay = 16;
+      const scrollThreshold = 120; // Only auto-scroll if within this many px of bottom
+
       const animate = () => {
         if (currentIndex < fullText.length) {
-          // Calculate end index for this frame
           const endIndex = Math.min(currentIndex + charsPerFrame, fullText.length);
           const currentText = fullText.substring(0, endIndex);
-          
-          // Update message state - batched for performance
-          requestAnimationFrame(() => {
-            setMessages(prev => prev.map(msg => 
-              msg.id === messageId 
-                ? { ...msg, text: currentText, isStreaming: endIndex < fullText.length }
-                : msg
-            ));
 
-            // Smooth scroll to bottom on next frame
-            requestAnimationFrame(() => {
-              const chatContainer = document.querySelector('.flex-1.overflow-y-auto');
-              if (chatContainer) {
-                chatContainer.scrollTop = chatContainer.scrollHeight;
-              }
-            });
-          });
+          setMessages(prev => prev.map(msg =>
+            msg.id === messageId
+              ? { ...msg, text: currentText, isStreaming: endIndex < fullText.length }
+              : msg
+          ));
+
+          // Only scroll to bottom if user hasn't scrolled up (so they can read above while generating)
+          const chatContainer = document.querySelector('.flex-1.overflow-y-auto');
+          if (chatContainer) {
+            const distanceFromBottom = chatContainer.scrollHeight - chatContainer.scrollTop - chatContainer.clientHeight;
+            if (distanceFromBottom < scrollThreshold) {
+              chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+          }
 
           currentIndex = endIndex;
-          
-          // Schedule next frame for smooth 60fps animation
-          setTimeout(() => {
-            requestAnimationFrame(animate);
-          }, minDelay);
+          setTimeout(animate, minDelay);
         } else {
-          // Animation complete - mark streaming as done
-          requestAnimationFrame(() => {
-            setMessages(prev => prev.map(msg => 
-              msg.id === messageId 
-                ? { ...msg, isStreaming: false }
-                : msg
-            ));
-          });
+          setMessages(prev => prev.map(msg =>
+            msg.id === messageId ? { ...msg, isStreaming: false } : msg
+          ));
           resolve();
         }
       };
 
-      // Start animation
-      requestAnimationFrame(animate);
+      // setTimeout so streaming continues when tab is in background (unlike requestAnimationFrame)
+      setTimeout(animate, 0);
     });
   };
 
@@ -562,9 +578,36 @@ const ChatbotInterface = () => {
     }
   };
 
+  // Session timed out (invalid or expired token)
+  if (authStatus === 'invalid') {
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-gray-100">
+        <div className="text-center max-w-md px-6">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
+            <span className="text-2xl">⏱</span>
+          </div>
+          <h1 className="text-xl font-bold text-gray-900 mb-2">Session timed out</h1>
+          <p className="text-gray-600 mb-6">Please log in again from the admin portal and open Easy GPT.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Verifying JWT...
+  if (authStatus === 'pending') {
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-gray-50">
+        <div className="text-center">
+          <div className="inline-block w-8 h-8 border-2 border-red-500 border-t-transparent rounded-full animate-spin mb-4" />
+          <p className="text-gray-600">Verifying...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`h-screen w-full overflow-hidden transition-colors ${
-      isDarkMode 
+        isDarkMode 
         ? 'bg-gray-900' 
         : 'bg-gray-50'
     }`}>

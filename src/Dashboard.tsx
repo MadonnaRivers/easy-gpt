@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { MessageSquare, Trash2, Moon, Sun, Search, X, Upload, FileText, History, CheckCircle, AlertCircle } from 'lucide-react';
-import { conversationService, fileHashService, Conversation, Message, FileHash } from './lib/supabaseClient';
+import { conversationService, fileHashService, Conversation, Message, FileHash } from './lib/storage';
 
 // Webhook URLs for dashboard data (n8n → MySQL)
 const CONVERSATIONS_WEBHOOK_URL = 'https://uat-n8n.easyhomefinance.in/webhook/f5c7f525-6af7-47d4-b080-715892d350f6';
@@ -12,8 +12,6 @@ const FILE_UPLOAD_WEBHOOK_URL = import.meta.env.DEV
   : 'https://uat-n8n.easyhomefinance.in/webhook/bfeed288-3ed4-4428-9b28-b39842289d3c';
 // Client-side limit (MB). Server may have a lower limit (413 = Request Entity Too Large).
 const MAX_UPLOAD_FILE_SIZE_MB = 25;
-
-// Using FileHash from Supabase instead of local interface
 
 const Dashboard = () => {
   const [isDarkMode, setIsDarkMode] = useState(() => {

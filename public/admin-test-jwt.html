@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Easy GPT – JWT test (Admin team)</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; max-width: 560px; margin: 2rem auto; padding: 0 1rem; }
+    h1 { font-size: 1.25rem; margin-bottom: 0.5rem; }
+    p { color: #555; font-size: 0.9rem; margin-bottom: 1rem; }
+    label { display: block; font-weight: 600; margin-bottom: 0.35rem; font-size: 0.9rem; }
+    input, textarea { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #ccc; border-radius: 6px; font-size: 0.9rem; }
+    textarea { min-height: 120px; resize: vertical; }
+    button { margin-top: 0.75rem; padding: 0.6rem 1.2rem; background: #dc2626; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; }
+    button:hover { background: #b91c1c; }
+    .note { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 0.75rem; margin-top: 1.5rem; font-size: 0.85rem; color: #0c4a6e; }
+  </style>
+</head>
+<body>
+  <h1>Easy GPT – JWT test page</h1>
+  <p>Use this page to test opening Easy GPT with a JWT token. Paste a token below and click the button. You will be redirected to Easy GPT with the token in the URL; Easy GPT will verify it via the n8n webhook.</p>
+
+  <label for="baseUrl">Easy GPT base URL</label>
+  <input type="text" id="baseUrl" value="http://localhost:3000" placeholder="http://localhost:3000 or https://your-easygpt-domain.com" />
+
+  <label for="token" style="margin-top: 1rem;">JWT token</label>
+  <textarea id="token" placeholder="Paste the JWT token here (from your login / JWT server)"></textarea>
+
+  <button type="button" id="open">Open Easy GPT with this token</button>
+
+  <div class="note">
+    <strong>For admin team:</strong> In your app, when sending the user to Easy GPT, redirect to:<br>
+    <code id="urlExample">BASE_URL?jwt_token=YOUR_JWT</code><br><br>
+    Replace BASE_URL with the Easy GPT URL and YOUR_JWT with the token you have after user login.
+  </div>
+
+  <script>
+    var baseInput = document.getElementById('baseUrl');
+    var tokenInput = document.getElementById('token');
+    var openBtn = document.getElementById('open');
+    var urlExample = document.getElementById('urlExample');
+
+    function updateExample() {
+      var base = (baseInput.value || '').trim() || 'http://localhost:3000';
+      urlExample.textContent = base + '?jwt_token=YOUR_JWT';
+    }
+    baseInput.addEventListener('input', updateExample);
+    updateExample();
+
+    openBtn.addEventListener('click', function () {
+      var base = (baseInput.value || '').trim().replace(/\/$/, '');
+      var token = (tokenInput.value || '').trim();
+      if (!base) { alert('Please enter the Easy GPT base URL.'); return; }
+      if (!token) { alert('Please paste the JWT token.'); return; }
+      var url = base + '?jwt_token=' + encodeURIComponent(token);
+      window.location.href = url;
+    });
+  </script>
+</body>
+</html>
