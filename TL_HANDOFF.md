@@ -78,7 +78,7 @@ npm run build
    **`POST https://uat-n8n.easyhomefinance.in/webhook/verify_jwt`**  
    Body: `{ "token": "<JWT>" }`
 
-5. **n8n** returns JSON. App expects **`valid: true`** and **`employee_code`** (optional **`source`**) to allow access.
+5. **n8n** returns JSON. App allows access only if **`valid: true`**, **`employee_code`** (non-empty), and **`source`** is **`web`** or **`app`** (case-insensitive). No other fields are required.
 
 6. **Success:** Token removed from URL; `employee_code` / `source` stored locally; user uses chat.  
    **Failure:** “Session timed out” page.

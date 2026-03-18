@@ -205,9 +205,9 @@ const ChatbotInterface = () => {
       setAuthStatus('pending');
       verifyJwt(token)
         .then((result) => {
-          if (result.valid && result.employee_code) {
-            localStorage.setItem('employee_code', String(result.employee_code));
-            if (result.source != null) localStorage.setItem('source', String(result.source));
+          if (result.valid === true) {
+            localStorage.setItem('employee_code', result.employee_code);
+            localStorage.setItem('source', result.source);
             sessionStorage.setItem('easygpt_access', 'jwt');
             sessionStorage.setItem('easygpt_jwt_ok', '1');
             params.delete('jwt_token');

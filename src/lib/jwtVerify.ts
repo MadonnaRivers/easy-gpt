@@ -13,11 +13,12 @@ function jwtVerifyEndpoint(): string {
   return 'https://uat-n8n.easyhomefinance.in/webhook/verify_jwt';
 }
 
+/** n8n must return these on success (plus valid: true). */
 export interface JwtVerifySuccess {
   valid: true;
-  employee_code?: string;
-  source?: string;
-  [key: string]: unknown;
+  employee_code: string;
+  /** "web" | "app" */
+  source: string;
 }
 
 export interface JwtVerifyFailure {
@@ -58,17 +59,27 @@ export async function verifyJwt(token: string): Promise<JwtVerifyResult> {
       };
     }
 
-    // Webhook returns valid: true and user data (employee_code, source, etc.) on success
+    // Success = valid + employee_code + source (web | app) only
     if (data && data.valid === true) {
-      const emp =
+      const empRaw =
         data.employee_code ?? (data as { employeeCode?: string }).employeeCode;
-      const src = data.source ?? (data as { Source?: string }).Source;
-      return {
-        ...data,
-        valid: true as const,
-        employee_code: emp != null ? String(emp) : undefined,
-        source: src != null ? String(src) : undefined,
-      };
+      const srcRaw =
+        data.source ?? (data as { Source?: string }).Source;
+      const emp =
+        empRaw != null && String(empRaw).trim() !== ''
+          ? String(empRaw).trim()
+          : '';
+      const srcNorm = String(srcRaw ?? '')
+        .trim()
+        .toLowerCase();
+      const sourceOk = srcNorm === 'web' || srcNorm === 'app';
+      if (emp && sourceOk) {
+        return {
+          valid: true as const,
+          employee_code: emp,
+          source: srcNorm,
+        };
+      }
     }
 
     return {
