@@ -41,6 +41,30 @@ Run **`npm start`** under **PM2**, **systemd**, or **Docker** so it restarts on 
 | `/app/` | Chat |
 | `/app/?jwt_token=...` | JWT flow |
 | `/app/dashboard` | Dashboard (predefined / cookie) |
+| `POST /api/verify-jwt` | Internal: forwards `{ token }` to n8n `…/webhook/verify_jwt` |
+
+## How to run
+
+1. **Production (real users)**  
+   `npm ci` → `npm run build` → `npm start`  
+   Open **`http://YOUR_SERVER:8000`**. The Node app is the only “API” you start; it serves the static chat app and proxies JWT verify to n8n.
+
+2. **Local frontend only (hot reload)**  
+   `npm run dev` (port 3000). Chat/JWT still work if n8n and `/api/verify-jwt` proxy are reachable; dashboard cookie checks may need the Node server on 8000 running too.
+
+## End-to-end: JWT → Easy GPT
+
+1. **Start the app** — Run **`npm start`** (after **`npm run build`**). The server listens on port **8000** (by default).
+
+2. **User arrives with a JWT** — Your admin portal (or a link) sends the user to Easy GPT with the token in the query string, e.g.  
+   **`https://your-server/app/?jwt_token=THE_JWT`**
+
+3. **Verification** — The React app calls **`POST /api/verify-jwt`** on **your server** (same origin) with body **`{ "token": "THE_JWT" }`**. The server forwards that to n8n:  
+   **`https://uat-n8n.easyhomefinance.in/webhook/verify_jwt`** (or whatever you set in **`N8N_JWT_VERIFY_URL`**).
+
+4. **n8n responds** — If the workflow returns **`valid: true`** and an **`employee_code`** (and optionally **`source`**), the app stores them, removes `jwt_token` from the URL, and shows **Easy GPT** (chat). If invalid, the user sees **Session timed out**.
+
+5. **Predefined access (optional)** — Users can instead open **`/`**, submit the internal token → redirect to **`/app/?access=predefined`** (dashboard allowed for that path). This path does **not** call the JWT webhook.
 
 ## Re-deploy
 
@@ -66,6 +90,6 @@ location / {
 ## Config
 
 - Predefined token: **`server.mjs`** → `VALID_TOKEN`
-- JWT webhook: **`src/lib/jwtVerify.ts`**
+- JWT verify: browser → **`POST /api/verify-jwt`** → server forwards to n8n **`…/webhook/verify_jwt`**. Override with **`N8N_JWT_VERIFY_URL`** if needed.
 
 Do not commit `node_modules/`, `dist/` (rebuild on server).

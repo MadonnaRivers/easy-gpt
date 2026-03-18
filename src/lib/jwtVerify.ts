@@ -1,9 +1,17 @@
 /**
  * JWT verification via n8n webhook.
- * Sends the token to the webhook and returns the JSON response (valid + user data or error).
+ * Uses same-origin POST /api/verify-jwt (Node or Vite proxy) so n8n always receives the token
+ * without browser CORS. Set VITE_JWT_VERIFY_WEBHOOK_URL only if you must call n8n directly.
  */
 
-const JWT_VERIFY_WEBHOOK_URL = 'https://uat-n8n.easyhomefinance.in/webhook/verify_jwt';
+function jwtVerifyEndpoint(): string {
+  const direct = import.meta.env.VITE_JWT_VERIFY_WEBHOOK_URL as string | undefined;
+  if (direct?.trim()) return direct.trim();
+  if (typeof window !== 'undefined') {
+    return `${window.location.origin}/api/verify-jwt`;
+  }
+  return 'https://uat-n8n.easyhomefinance.in/webhook/verify_jwt';
+}
 
 export interface JwtVerifySuccess {
   valid: true;
@@ -31,7 +39,7 @@ export async function verifyJwt(token: string): Promise<JwtVerifyResult> {
   }
 
   try {
-    const response = await fetch(JWT_VERIFY_WEBHOOK_URL, {
+    const response = await fetch(jwtVerifyEndpoint(), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

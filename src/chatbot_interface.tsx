@@ -670,7 +670,7 @@ const ChatbotInterface = () => {
     }
   };
 
-  // Session timed out (invalid or expired token)
+  // Session timed out
   if (authStatus === 'invalid' || authStatus === 'pending') {
     if (authStatus === 'pending') {
       return (
@@ -688,8 +688,7 @@ const ChatbotInterface = () => {
           <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-red-100 flex items-center justify-center">
             <span className="text-2xl">⏱</span>
           </div>
-          <h1 className="text-xl font-bold text-gray-900 mb-2">Session timed out</h1>
-          <p className="text-gray-600 mb-6">Please log in again from the admin portal and open Easy GPT.</p>
+          <h1 className="text-xl font-bold text-gray-900">Session timed out</h1>
         </div>
       </div>
     );

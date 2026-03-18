@@ -37,6 +37,13 @@ export default defineConfig({
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
       },
+      // JWT verify: same-origin in dev → forwards to n8n (matches server N8N_JWT_VERIFY_URL default)
+      '/api/verify-jwt': {
+        target: 'https://uat-n8n.easyhomefinance.in',
+        changeOrigin: true,
+        rewrite: () => '/webhook/verify_jwt',
+        secure: true,
+      },
     }
   }
 })

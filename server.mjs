@@ -2,6 +2,7 @@
  * Node server (replaces Python FastAPI): landing, /load token gate, static /app, dashboard cookie API.
  * Run: npm run build && node server.mjs
  * Env: PORT (default 8000), HOST (default 0.0.0.0)
+ *       N8N_JWT_VERIFY_URL — n8n JWT webhook (default: UAT /webhook/verify_jwt)
  */
 
 import express from 'express';
@@ -18,6 +19,11 @@ const distReady = fs.existsSync(path.join(distPath, 'index.html'));
 const VALID_TOKEN = '24681379';
 const DASHBOARD_COOKIE = 'easygpt_dashboard';
 
+/** Forward JWT verify here so the browser never calls n8n directly (CORS). */
+const N8N_JWT_VERIFY_URL =
+  process.env.N8N_JWT_VERIFY_URL ||
+  'https://uat-n8n.easyhomefinance.in/webhook/verify_jwt';
+
 const SESSION_TIMEOUT_HTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -33,7 +39,6 @@ const SESSION_TIMEOUT_HTML = `<!DOCTYPE html>
 <body>
   <div class="box">
     <h1>Session timed out</h1>
-    <p>Your token was invalid or expired. Please try again.</p>
   </div>
 </body>
 </html>`;
@@ -60,7 +65,6 @@ const LANDING_HTML = `<!DOCTYPE html>
       <input type="text" name="token" placeholder="Token" required autofocus />
       <button type="submit">Go</button>
     </form>
-    <p style="margin-top:1rem;font-size:0.9rem;color:#888;">Test token: 24681379</p>
   </div>
 </body>
 </html>`;
@@ -78,6 +82,37 @@ app.use(express.urlencoded({ extended: true }));
 
 app.get('/api/dashboard-access', (req, res) => {
   res.json({ dashboard: req.cookies[DASHBOARD_COOKIE] === '1' });
+});
+
+app.post('/api/verify-jwt', async (req, res) => {
+  const token =
+    req.body && typeof req.body.token === 'string' ? req.body.token.trim() : '';
+  if (!token) {
+    return res.status(400).json({ valid: false, error: 'invalid_token' });
+  }
+  try {
+    const r = await fetch(N8N_JWT_VERIFY_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    });
+    const text = await r.text();
+    let data;
+    try {
+      data = text ? JSON.parse(text) : {};
+    } catch {
+      return res
+        .status(502)
+        .json({ valid: false, error: 'bad_response', message: 'n8n did not return JSON' });
+    }
+    res.status(r.status).json(data);
+  } catch (e) {
+    res.status(502).json({
+      valid: false,
+      error: 'network_error',
+      message: e instanceof Error ? e.message : String(e),
+    });
+  }
 });
 
 app.post('/load', (req, res) => {
