@@ -90,6 +90,6 @@ location / {
 ## Config
 
 - Predefined token: **`server.mjs`** → `VALID_TOKEN`
-- JWT verify: browser → **`POST /api/verify-jwt`** → server forwards to n8n **`…/webhook/verify_jwt`**. Override with **`N8N_JWT_VERIFY_URL`** if needed.
+- JWT verify: browser → **`POST /api/verify-jwt`** → server forwards **`{ token }`** to n8n with **`Authorization`** + **`Cookie`** (see **`n8nJwtVerifyAuth.mjs`**). Optional URL override: **`N8N_JWT_VERIFY_URL`**.
 
 Do not commit `node_modules/`, `dist/` (rebuild on server).

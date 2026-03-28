@@ -73,10 +73,11 @@ npm run build
 
 3. **Browser** calls **`POST /api/verify-jwt`** on **same host** (no CORS to n8n from browser).
 
-4. **Node server** forwards to n8n:
+4. **Node server** forwards to n8n (secured like your curl):
 
-   **`POST https://uat-n8n.easyhomefinance.in/webhook/verify_jwt`**  
-   Body: `{ "token": "<JWT>" }`
+   **`POST`** to **`N8N_JWT_VERIFY_URL`** (default: UAT **`/webhook/verify_jwt`**)  
+   **Body:** `{ "token": "<JWT>" }`  
+   **Headers to n8n:** `Content-Type: application/json`, **`Authorization: Basic …`**, **`Cookie: easygpt_dashboard=1`** — defined in **`n8nJwtVerifyAuth.mjs`** (used by **`server.mjs`**; optional URL override: env **`N8N_JWT_VERIFY_URL`**).
 
 5. **n8n** returns JSON. App allows access only if **`valid: true`**, **`employee_code`** (non-empty), and **`source`** is **`web`** or **`app`** (case-insensitive). No other fields are required.
 
@@ -123,10 +124,10 @@ npm start
 
 ## Postman — test JWT verify on n8n
 
-- **POST** `https://uat-n8n.easyhomefinance.in/webhook/verify_jwt`
-- **Headers:** `Content-Type: application/json`
+- **POST** your verify URL (e.g. `…/webhook/verify_jwt`)
+- **Headers:** `Content-Type: application/json`, `Authorization: Basic …`, `Cookie: easygpt_dashboard=1` (same values as **`n8nJwtVerifyAuth.mjs`**)
 - **Body (raw JSON):** `{ "token": "<paste-jwt>" }`
-- Workflow must be **Active** in n8n to see production executions.
+- Or **POST** `http://your-server:8000/api/verify-jwt` with **`Content-Type: application/json`** and body `{ "token": "..." }` — the app server adds Basic + Cookie to the n8n request.
 
 ---
 

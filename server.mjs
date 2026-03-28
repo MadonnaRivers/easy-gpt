@@ -2,7 +2,7 @@
  * Node server (replaces Python FastAPI): landing, /load token gate, static /app, dashboard cookie API.
  * Run: npm run build && node server.mjs
  * Env: PORT (default 8000), HOST (default 0.0.0.0)
- *       N8N_JWT_VERIFY_URL — n8n JWT webhook (default: UAT /webhook/verify_jwt)
+ *       N8N_JWT_VERIFY_URL — optional override for n8n JWT webhook URL
  */
 
 import express from 'express';
@@ -11,6 +11,10 @@ import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
+import {
+  N8N_JWT_VERIFY_URL_DEFAULT,
+  n8nJwtVerifyOutboundHeaders,
+} from './n8nJwtVerifyAuth.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const distPath = path.join(__dirname, 'dist');
@@ -21,8 +25,7 @@ const DASHBOARD_COOKIE = 'easygpt_dashboard';
 
 /** Forward JWT verify here so the browser never calls n8n directly (CORS). */
 const N8N_JWT_VERIFY_URL =
-  process.env.N8N_JWT_VERIFY_URL ||
-  'https://uat-n8n.easyhomefinance.in/webhook/verify_jwt';
+  process.env.N8N_JWT_VERIFY_URL || N8N_JWT_VERIFY_URL_DEFAULT;
 
 const SESSION_TIMEOUT_HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -93,7 +96,7 @@ app.post('/api/verify-jwt', async (req, res) => {
   try {
     const r = await fetch(N8N_JWT_VERIFY_URL, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: n8nJwtVerifyOutboundHeaders(),
       body: JSON.stringify({ token }),
     });
     const text = await r.text();

@@ -1,5 +1,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import {
+  N8N_JWT_VERIFY_AUTH_HEADER,
+  N8N_JWT_VERIFY_COOKIE_HEADER,
+} from './n8nJwtVerifyAuth.mjs'
 
 export default defineConfig({
   plugins: [react()],
@@ -37,12 +41,18 @@ export default defineConfig({
         target: 'http://127.0.0.1:8000',
         changeOrigin: true,
       },
-      // JWT verify: same-origin in dev → forwards to n8n (matches server N8N_JWT_VERIFY_URL default)
+      // JWT verify: same-origin in dev → n8n with Basic + Cookie (must match server.mjs)
       '/api/verify-jwt': {
         target: 'https://uat-n8n.easyhomefinance.in',
         changeOrigin: true,
         rewrite: () => '/webhook/verify_jwt',
         secure: true,
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq) => {
+            proxyReq.setHeader('Authorization', N8N_JWT_VERIFY_AUTH_HEADER)
+            proxyReq.setHeader('Cookie', N8N_JWT_VERIFY_COOKIE_HEADER)
+          })
+        },
       },
     }
   }
