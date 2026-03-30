@@ -134,11 +134,6 @@ type AuthStatus = 'pending' | 'valid' | 'invalid' | null;
 /** Employee code for predefined-token login (FastAPI /load). Sent with chat webhook. */
 const PREDEFINED_INTERNAL_EMPLOYEE = '__EASYGPT_INTERNAL__';
 
-function dashboardAccessUrl(): string {
-  if (import.meta.env.DEV) return '/api/dashboard-access';
-  return `${window.location.origin}/api/dashboard-access`;
-}
-
 function getEmployeeCode(): string {
   const c = localStorage.getItem('employee_code')?.trim();
   if (c) return c;
@@ -245,20 +240,13 @@ const ChatbotInterface = () => {
     setAuthStatus('invalid');
   }, []);
 
-  // After auth runs: predefined session → show Dashboard; else cookie from POST /load (same host)
+  // Dashboard is strictly for predefined internal flow only.
   useEffect(() => {
     if (authStatus === 'pending' || authStatus === 'invalid') {
       setDashboardAllowed(false);
       return;
     }
-    if (sessionStorage.getItem('easygpt_access') === 'predefined') {
-      setDashboardAllowed(true);
-      return;
-    }
-    fetch(dashboardAccessUrl(), { credentials: 'include' })
-      .then((r) => r.json())
-      .then((d) => setDashboardAllowed(!!d.dashboard))
-      .catch(() => setDashboardAllowed(false));
+    setDashboardAllowed(sessionStorage.getItem('easygpt_access') === 'predefined');
   }, [authStatus]);
 
   // Load conversations per employee_code (ChatGPT-style) after auth is ready

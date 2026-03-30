@@ -2,23 +2,11 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Dashboard from './Dashboard';
 
-function dashboardAccessUrl(): string {
-  if (import.meta.env.DEV) return '/api/dashboard-access';
-  return `${window.location.origin}/api/dashboard-access`;
-}
-
 export default function DashboardGate() {
   const [allowed, setAllowed] = useState<boolean | null>(null);
 
   useEffect(() => {
-    if (sessionStorage.getItem('easygpt_access') === 'predefined') {
-      setAllowed(true);
-      return;
-    }
-    fetch(dashboardAccessUrl(), { credentials: 'include' })
-      .then((r) => r.json())
-      .then((d) => setAllowed(!!d.dashboard))
-      .catch(() => setAllowed(false));
+    setAllowed(sessionStorage.getItem('easygpt_access') === 'predefined');
   }, []);
 
   if (allowed === null) {

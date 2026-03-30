@@ -13,7 +13,8 @@ function jwtVerifyEndpoint(): string {
   return 'https://uat-n8n.easyhomefinance.in/webhook/verify_jwt';
 }
 
-/** n8n must return these on success (plus valid: true). */
+
+
 export interface JwtVerifySuccess {
   valid: true;
   employee_code: string;
@@ -59,27 +60,37 @@ export async function verifyJwt(token: string): Promise<JwtVerifyResult> {
       };
     }
 
-    // Success = valid + employee_code + source (web | app) only
-    if (data && data.valid === true) {
-      const empRaw =
-        data.employee_code ?? (data as { employeeCode?: string }).employeeCode;
-      const srcRaw =
-        data.source ?? (data as { Source?: string }).Source;
-      const emp =
-        empRaw != null && String(empRaw).trim() !== ''
-          ? String(empRaw).trim()
-          : '';
-      const srcNorm = String(srcRaw ?? '')
-        .trim()
-        .toLowerCase();
-      const sourceOk = srcNorm === 'web' || srcNorm === 'app';
-      if (emp && sourceOk) {
+    // Allow only when response matches expected payload structure.
+    const hasError =
+      data &&
+      typeof data === 'object' &&
+      'error' in (data as Record<string, unknown>) &&
+      String((data as { error?: unknown }).error ?? '').trim() !== '';
+    if (data && typeof data === 'object' && !hasError) {
+      const payload = (data as { payload?: unknown }).payload;
+      const okPayload =
+        payload != null &&
+        typeof payload === 'object' &&
+        typeof (payload as { unique_code?: unknown }).unique_code === 'string' &&
+        String((payload as { unique_code?: string }).unique_code ?? '').trim() !== '' &&
+        typeof (payload as { iat?: unknown }).iat === 'number' &&
+        typeof (payload as { exp?: unknown }).exp === 'number' &&
+        (payload as { iss?: unknown }).iss === 'easyhomefinance.in' &&
+        (payload as { aud?: unknown }).aud === 'internal-api' &&
+        (payload as { sub?: unknown }).sub === 'user-auth';
+
+      if (!okPayload) {
         return {
-          valid: true as const,
-          employee_code: emp,
-          source: srcNorm,
+          valid: false,
+          error: 'session_timed_out',
+          message: 'Invalid JWT payload',
         };
       }
+      return {
+        valid: true as const,
+        employee_code: 'JWT_USER',
+        source: 'web',
+      };
     }
 
     return {
