@@ -60,7 +60,7 @@ Run **`npm start`** under **PM2**, **systemd**, or **Docker** so it restarts on 
    **`https://your-server/app/?jwt_token=THE_JWT`**
 
 3. **Verification** — The React app calls **`POST /api/verify-jwt`** on **your server** (same origin) with body **`{ "token": "THE_JWT" }`**. The server forwards that to n8n:  
-   **`https://uat-n8n.easyhomefinance.in/webhook/verify_jwt`** (or whatever you set in **`N8N_JWT_VERIFY_URL`**).
+   **`https://n8n.easyhomefinance.in/webhook/verify_jwt`** (or whatever you set in **`N8N_JWT_VERIFY_URL`**).
 
 4. **n8n responds** — Access only if **`valid: true`**, non-empty **`employee_code`**, and **`source`** is **`web`** or **`app`**. Those two values are stored; then `jwt_token` is removed from the URL. Otherwise **Session timed out**.
 

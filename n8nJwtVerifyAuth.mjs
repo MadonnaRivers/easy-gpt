@@ -3,7 +3,7 @@
  * Body is always JSON { token } from server.mjs / Vite proxy.
  */
 export const N8N_JWT_VERIFY_URL_DEFAULT =
-  'https://uat-n8n.easyhomefinance.in/webhook/verify_jwt';
+  'https://n8n.easyhomefinance.in/webhook/verify_jwt';
 
 export const N8N_JWT_VERIFY_AUTH_HEADER =
   'Basic Z2VuX2p3dDpFaGZsQGdlbl9qd3QxMjc4';

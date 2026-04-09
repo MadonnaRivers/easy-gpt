@@ -397,7 +397,7 @@ const ChatbotInterface = () => {
   };
   
   // N8N webhook URL (requires sessionId + chatInput in body)
-  const N8N_WEBHOOK_URL = 'https://uat-n8n.easyhomefinance.in/webhook/edf7c50a-2d5f-4e1e-b070-1e4de62e098e';
+  const N8N_WEBHOOK_URL = 'https://n8n.easyhomefinance.in/webhook/edf7c50a-2d5f-4e1e-b070-1e4de62e098e';
 
   const handleSend = async () => {
     // Prevent multiple submissions
@@ -573,7 +573,7 @@ const ChatbotInterface = () => {
       } else if (error instanceof Error && error.message === 'N8N_WORKFLOW_ERROR') {
         errorMessage = `**⚠️ N8N Workflow Execution Error**\n\nGood news: The webhook is working! But there's an error inside your N8N workflow.\n\n**To fix this:**\n\n1. Open N8N: **http://localhost:5678**\n2. Go to **Executions** (left sidebar)\n3. Check the latest execution - it will show the error\n4. Common issues:\n   - Missing or incorrect node configuration\n   - Wrong data format expected\n   - Missing required fields\n   - Code errors in Code/Function nodes\n\n**Request sent:**\n\`\`\`json\n${JSON.stringify({ sessionId, action: 'sendMessage', chatInput: userMessage, employee_code: employeeCode, source }, null, 2)}\n\`\`\`\n\n**Check N8N Executions tab for detailed error information.**`;
       } else {
-        errorMessage = `**Error:** ${error instanceof Error ? error.message : 'Unknown error'}\n\n**Troubleshooting:**\n\n1. ✅ Is the N8N server accessible?\n2. ✅ Is the workflow **ACTIVATED** (toggle switch ON)?\n3. ✅ Does the webhook path match: \`/webhook/edf7c50a-2d5f-4e1e-b070-1e4de62e098e\`?\n4. ✅ Check N8N **Executions** tab for error details\n\n**Webhook URL:** https://uat-n8n.easyhomefinance.in/webhook/edf7c50a-2d5f-4e1e-b070-1e4de62e098e`;
+        errorMessage = `**Error:** ${error instanceof Error ? error.message : 'Unknown error'}\n\n**Troubleshooting:**\n\n1. ✅ Is the N8N server accessible?\n2. ✅ Is the workflow **ACTIVATED** (toggle switch ON)?\n3. ✅ Does the webhook path match: \`/webhook/edf7c50a-2d5f-4e1e-b070-1e4de62e098e\`?\n4. ✅ Check N8N **Executions** tab for error details\n\n**Webhook URL:** https://n8n.easyhomefinance.in/webhook/edf7c50a-2d5f-4e1e-b070-1e4de62e098e`;
       }
       
       setMessages(prev => prev.filter(msg => msg.id !== loadingMessageId).concat([{

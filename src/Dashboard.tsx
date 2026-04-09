@@ -4,13 +4,13 @@ import { MessageSquare, Trash2, Moon, Sun, Search, X, Upload, FileText, History,
 import { conversationService, fileHashService, Conversation, Message, FileHash } from './lib/storage';
 
 // Webhook URLs for dashboard data (n8n → MySQL)
-const CONVERSATIONS_WEBHOOK_URL = 'https://uat-n8n.easyhomefinance.in/webhook/f5c7f525-6af7-47d4-b080-715892d350f6';
-const MESSAGES_WEBHOOK_URL = 'https://uat-n8n.easyhomefinance.in/webhook/48a93076-1569-4e6d-8a2b-d773ef94655b';
+const CONVERSATIONS_WEBHOOK_URL = 'https://n8n.easyhomefinance.in/webhook/f5c7f525-6af7-47d4-b080-715892d350f6';
+const MESSAGES_WEBHOOK_URL = 'https://n8n.easyhomefinance.in/webhook/48a93076-1569-4e6d-8a2b-d773ef94655b';
 
 // File upload: in dev we use same-origin /api/upload (Vite proxies to n8n) to avoid CORS
 const FILE_UPLOAD_WEBHOOK_URL = import.meta.env.DEV
   ? '/api/upload'
-  : 'https://uat-n8n.easyhomefinance.in/webhook/bfeed288-3ed4-4428-9b28-b39842289d3c';
+  : 'https://n8n.easyhomefinance.in/webhook/bfeed288-3ed4-4428-9b28-b39842289d3c';
 // Client-side limit (MB). Server may have a lower limit (413 = Request Entity Too Large).
 const MAX_UPLOAD_FILE_SIZE_MB = 25;
 

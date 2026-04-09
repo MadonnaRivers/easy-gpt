@@ -10,7 +10,7 @@ function jwtVerifyEndpoint(): string {
   if (typeof window !== 'undefined') {
     return `${window.location.origin}/api/verify-jwt`;
   }
-  return 'https://uat-n8n.easyhomefinance.in/webhook/verify_jwt';
+  return 'https://n8n.easyhomefinance.in/webhook/verify_jwt';
 }
 
 

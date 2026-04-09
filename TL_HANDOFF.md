@@ -106,7 +106,7 @@ npm start
 ## Chat (messages to n8n)
 
 - **Webhook:**  
-  `https://uat-n8n.easyhomefinance.in/webhook/edf7c50a-2d5f-4e1e-b070-1e4de62e098e`
+  `https://n8n.easyhomefinance.in/webhook/edf7c50a-2d5f-4e1e-b070-1e4de62e098e`
 - **POST body (JSON):** `sessionId`, `chatInput`, `employee_code`, `source`, `action: 'sendMessage'`
 - **New Chat** generates a **new `sessionId`**; same chat reuses the same `sessionId` for all messages in that thread.
 

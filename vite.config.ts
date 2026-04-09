@@ -32,7 +32,7 @@ export default defineConfig({
       },
       // File upload: same-origin in dev to avoid CORS; Vite forwards to n8n UAT
       '/api/upload': {
-        target: 'https://uat-n8n.easyhomefinance.in',
+        target: 'https://n8n.easyhomefinance.in',
         changeOrigin: true,
         rewrite: () => '/webhook/bfeed288-3ed4-4428-9b28-b39842289d3c',
         secure: true,
@@ -43,7 +43,7 @@ export default defineConfig({
       },
       // JWT verify: same-origin in dev → n8n with Basic + Cookie (must match server.mjs)
       '/api/verify-jwt': {
-        target: 'https://uat-n8n.easyhomefinance.in',
+        target: 'https://n8n.easyhomefinance.in',
         changeOrigin: true,
         rewrite: () => '/webhook/verify_jwt',
         secure: true,
