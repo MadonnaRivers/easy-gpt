@@ -24,7 +24,7 @@ npm run build
 npm start
 ```
 
-- Default URL: **`http://SERVER_IP:8000`**
+- Default URL: **`http://SERVER_IP:8002`**
 - Custom port (optional):
 
 ```bash
@@ -66,7 +66,7 @@ npm run build
 
 ## End-to-end: JWT → Easy GPT
 
-1. **TL starts the app:** `npm run build` + `npm start` (port 8000 by default).
+1. **TL starts the app:** `npm run build` + `npm start` (port 8002 by default).
 
 2. **Admin portal** sends user to Easy GPT with JWT in query string, e.g.  
    `https://your-host/app/?jwt_token=<JWT>`
@@ -127,7 +127,7 @@ npm start
 - **POST** your verify URL (e.g. `…/webhook/verify_jwt`)
 - **Headers:** `Content-Type: application/json`, `Authorization: Basic …`, `Cookie: easygpt_dashboard=1` (same values as **`n8nJwtVerifyAuth.mjs`**)
 - **Body (raw JSON):** `{ "token": "<paste-jwt>" }`
-- Or **POST** `http://your-server:8000/api/verify-jwt` with **`Content-Type: application/json`** and body `{ "token": "..." }` — the app server adds Basic + Cookie to the n8n request.
+- Or **POST** `http://your-server:8002/api/verify-jwt` with **`Content-Type: application/json`** and body `{ "token": "..." }` — the app server adds Basic + Cookie to the n8n request.
 
 ---
 

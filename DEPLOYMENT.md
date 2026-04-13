@@ -10,7 +10,7 @@ npm run build
 npm start
 ```
 
-Server listens on **port 8000** by default (`http://SERVER_IP:8000`).
+Server listens on **port 8002** by default (`http://SERVER_IP:8002`).
 
 **Linux — custom port (optional):**
 
@@ -28,7 +28,7 @@ set HOST=0.0.0.0
 npm start
 ```
 
-Run **`npm start`** under **PM2**, **systemd**, or **Docker** so it restarts on reboot. Put **Nginx** (or similar) in front with **HTTPS** and proxy to `127.0.0.1:8000`.
+Run **`npm start`** under **PM2**, **systemd**, or **Docker** so it restarts on reboot. Put **Nginx** (or similar) in front with **HTTPS** and proxy to `127.0.0.1:8002`.
 
 ## Requirements
 
@@ -47,14 +47,14 @@ Run **`npm start`** under **PM2**, **systemd**, or **Docker** so it restarts on 
 
 1. **Production (real users)**  
    `npm ci` → `npm run build` → `npm start`  
-   Open **`http://YOUR_SERVER:8000`**. The Node app is the only “API” you start; it serves the static chat app and proxies JWT verify to n8n.
+   Open **`http://YOUR_SERVER:8002`**. The Node app is the only “API” you start; it serves the static chat app and proxies JWT verify to n8n.
 
 2. **Local frontend only (hot reload)**  
-   `npm run dev` (port 3000). Chat/JWT still work if n8n and `/api/verify-jwt` proxy are reachable; dashboard cookie checks may need the Node server on 8000 running too.
+   `npm run dev` (port 3000). Chat/JWT still work if n8n and `/api/verify-jwt` proxy are reachable; dashboard cookie checks may need the Node server on 8002 running too.
 
 ## End-to-end: JWT → Easy GPT
 
-1. **Start the app** — Run **`npm start`** (after **`npm run build`**). The server listens on port **8000** (by default).
+1. **Start the app** — Run **`npm start`** (after **`npm run build`**). The server listens on port **8002** (by default).
 
 2. **User arrives with a JWT** — Your admin portal (or a link) sends the user to Easy GPT with the token in the query string, e.g.  
    **`https://your-server/app/?jwt_token=THE_JWT`**
@@ -79,7 +79,7 @@ npm run build
 
 ```nginx
 location / {
-    proxy_pass http://127.0.0.1:8000;
+    proxy_pass http://127.0.0.1:8002;
     proxy_http_version 1.1;
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

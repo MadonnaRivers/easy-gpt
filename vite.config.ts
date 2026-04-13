@@ -38,7 +38,7 @@ export default defineConfig({
         secure: true,
       },
       '/api/dashboard-access': {
-        target: 'http://127.0.0.1:8000',
+        target: 'http://127.0.0.1:8002',
         changeOrigin: true,
       },
       // JWT verify: same-origin in dev → n8n with Basic + Cookie (must match server.mjs)

@@ -1,7 +1,7 @@
 /**
  * Node server (replaces Python FastAPI): landing, /load token gate, static /app, dashboard cookie API.
  * Run: npm run build && node server.mjs
- * Env: PORT (default 8000), HOST (default 0.0.0.0)
+ * Env: PORT (default 8002), HOST (default 0.0.0.0)
  *       N8N_JWT_VERIFY_URL — optional override for n8n JWT webhook URL
  */
 
@@ -83,6 +83,17 @@ app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Avoid 500 when body is not valid JSON (e.g. bad curl / proxy); return 400 instead.
+app.use((err, req, res, next) => {
+  if (err && err.type === 'entity.parse.failed') {
+    return res.status(400).json({ error: 'invalid_json', message: 'Request body must be valid JSON' });
+  }
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    return res.status(400).json({ error: 'invalid_json', message: 'Request body must be valid JSON' });
+  }
+  next(err);
+});
+
 app.get('/api/dashboard-access', (req, res) => {
   res.json({ dashboard: req.cookies[DASHBOARD_COOKIE] === '1' });
 });
@@ -158,7 +169,7 @@ if (distReady) {
   app.get(/^\/app\/.*/, (_req, res) => res.status(503).type('html').send(missing));
 }
 
-const PORT = Number(process.env.PORT) || 8000;
+const PORT = Number(process.env.PORT) || 8002;
 const HOST = process.env.HOST || '0.0.0.0';
 
 app.listen(PORT, HOST, () => {

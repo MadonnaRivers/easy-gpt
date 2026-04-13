@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "node node_modules/typescript/bin/tsc && vite build",
     "preview": "vite preview",
     "start": "node server.mjs",
     "serve": "node server.mjs"
@@ -26,7 +26,7 @@
     "autoprefixer": "^10.4.14",
     "postcss": "^8.4.27",
     "tailwindcss": "^3.3.3",
-    "typescript": "^5.0.2",
+    "typescript": "^5.9.3",
     "vite": "^4.4.5"
   }
 }
