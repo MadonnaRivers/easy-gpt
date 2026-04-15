@@ -26,14 +26,14 @@ export default function DashboardGate() {
         <div className="text-center max-w-md">
           <h1 className="text-xl font-bold text-gray-900 mb-2">Dashboard access denied</h1>
           <p className="text-gray-600 mb-6">
-            The dashboard is only available when you sign in using the internal predefined token on the Easy GPT
+            The dashboard is only available when you sign in using the internal predefined token on the Pragati AI
             server. JWT-only users can use the chat only.
           </p>
           <Link
             to="/"
             className="inline-block px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600"
           >
-            Back to Easy GPT
+            Back to Pragati AI
           </Link>
         </div>
       </div>

@@ -248,9 +248,7 @@ const Dashboard = () => {
           : 'bg-white'
       }`}>
         <div className="flex items-center gap-4">
-          <h1 className={`text-xl font-bold transition-colors ${
-            isDarkMode ? 'text-white' : 'text-gray-900'
-          }`}>Easy GPT Dashboard</h1>
+          <h1 className="text-xl font-bold brand-title">Pragati AI Dashboard</h1>
           <Link
             to="/"
             className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors border text-sm font-medium ${
@@ -260,7 +258,7 @@ const Dashboard = () => {
             }`}
           >
             <MessageSquare size={18} />
-            Easy GPT
+            Pragati AI
           </Link>
         </div>
         <div className="flex items-center gap-3">
@@ -422,7 +420,7 @@ const Dashboard = () => {
                     <h2 className={`text-3xl font-bold mb-2 ${
                       isDarkMode ? 'text-white' : 'text-gray-900'
                     }`}>
-                      Upload Your Files for Easy GPT
+                      Upload Your Files for Pragati AI
                     </h2>
                     <p className={`text-sm ${
                       isDarkMode ? 'text-gray-400' : 'text-gray-500'

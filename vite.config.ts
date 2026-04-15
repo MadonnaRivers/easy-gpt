@@ -30,7 +30,7 @@ export default defineConfig({
           });
         },
       },
-      // File upload: same-origin in dev to avoid CORS; Vite forwards to n8n UAT
+      // File upload: same-origin in dev to avoid CORS; Vite forwards to n8n
       '/api/upload': {
         target: 'https://n8n.easyhomefinance.in',
         changeOrigin: true,

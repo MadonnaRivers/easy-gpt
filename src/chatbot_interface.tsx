@@ -23,9 +23,73 @@ const renderMessageText = (text: string) => {
   const listStack: number[] = [];
   let isFirstContent = true;
   
+  const isTableSeparator = (line: string) => {
+    const normalized = line.trim();
+    if (!normalized.includes('|')) return false;
+    const cells = normalized
+      .replace(/^\|/, '')
+      .replace(/\|$/, '')
+      .split('|')
+      .map((cell) => cell.trim());
+    return cells.length > 0 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+  };
+
+  const parseTableRow = (line: string) =>
+    line
+      .trim()
+      .replace(/^\|/, '')
+      .replace(/\|$/, '')
+      .split('|')
+      .map((cell) => cell.trim());
+
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     const trimmedLine = line.trim();
+
+    // 0. Handle Markdown-style tables
+    const nextLine = lines[i + 1]?.trim() || '';
+    if (trimmedLine.includes('|') && isTableSeparator(nextLine)) {
+      while (listStack.length > 0) {
+        processedLines.push('</ul>');
+        listStack.pop();
+      }
+
+      const headerCells = parseTableRow(trimmedLine);
+      const tableRows: string[][] = [];
+      let j = i + 2;
+      while (j < lines.length) {
+        const rowLine = lines[j].trim();
+        if (!rowLine.includes('|') || rowLine === '') break;
+        tableRows.push(parseTableRow(rowLine));
+        j++;
+      }
+
+      const headerHtml = headerCells
+        .map(
+          (cell) =>
+            `<th style="text-align: left; padding: 0.55rem 0.7rem; border-bottom: 1px solid rgba(156, 163, 175, 0.45); font-weight: 600; white-space: nowrap;">${cell}</th>`
+        )
+        .join('');
+      const bodyHtml = tableRows
+        .map((row) => {
+          const cols = headerCells.map((_, idx) => row[idx] || '');
+          const cellsHtml = cols
+            .map(
+              (cell) =>
+                `<td style="padding: 0.5rem 0.7rem; border-bottom: 1px solid rgba(156, 163, 175, 0.22); vertical-align: top;">${cell}</td>`
+            )
+            .join('');
+          return `<tr>${cellsHtml}</tr>`;
+        })
+        .join('');
+
+      processedLines.push(
+        `<div style="margin: 0.45rem 0 0.6rem 0; overflow-x: auto;"><table style="width: 100%; border-collapse: separate; border-spacing: 0; font-size: 0.92rem; line-height: 1.45; border: 1px solid rgba(156, 163, 175, 0.3); border-radius: 0.65rem; overflow: hidden;"><thead style="background: rgba(156, 163, 175, 0.12);"><tr>${headerHtml}</tr></thead><tbody>${bodyHtml}</tbody></table></div>`
+      );
+      isFirstContent = false;
+      i = j - 1;
+      continue;
+    }
     
     // 1. Handle Horizontal Rules
     if (trimmedLine.match(/^-{3,}$/)) {
@@ -397,7 +461,7 @@ const ChatbotInterface = () => {
   };
   
   // N8N webhook URL (requires sessionId + chatInput in body)
-  const N8N_WEBHOOK_URL = 'https://n8n.easyhomefinance.in/webhook/edf7c50a-2d5f-4e1e-b070-1e4de62e098e';
+  const N8N_WEBHOOK_URL = 'https://uat-n8n.easyhomefinance.in/webhook/edf7c50a-2d5f-4e1e-b070-1e4de62e098e';
 
   const handleSend = async () => {
     // Prevent multiple submissions
@@ -697,9 +761,7 @@ const ChatbotInterface = () => {
             : 'bg-white'
         }`}>
           <div className="flex items-center gap-4">
-            <h1 className={`text-xl font-bold transition-colors ${
-              isDarkMode ? 'text-white' : 'text-gray-900'
-            }`}>Easy GPT</h1>
+            <h1 className="text-xl font-bold brand-title">Pragati AI</h1>
           </div>
           <div className="flex items-center gap-3 flex-1 justify-center">
             <button
@@ -930,7 +992,7 @@ const ChatbotInterface = () => {
             <p className={`text-xs text-center mt-3 transition-colors ${
               isDarkMode ? 'text-gray-500' : 'text-gray-400'
             }`}>
-              Easy GPT can make mistakes. Please verify important information.
+              Pragati AI can make mistakes. Please verify important information.
             </p>
           </div>
         </div>
