@@ -461,7 +461,7 @@ const ChatbotInterface = () => {
   };
   
   // N8N webhook URL (requires sessionId + chatInput in body)
-  const N8N_WEBHOOK_URL = 'https://uat-n8n.easyhomefinance.in/webhook/edf7c50a-2d5f-4e1e-b070-1e4de62e098e';
+  const N8N_WEBHOOK_URL = 'https://n8n.easyhomefinance.in/webhook/edf7c50a-2d5f-4e1e-b070-1e4de62e098e';
 
   const handleSend = async () => {
     // Prevent multiple submissions

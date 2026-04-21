@@ -75,7 +75,7 @@ npm run build
 
 4. **Node server** forwards to n8n (secured like your curl):
 
-   **`POST`** to **`N8N_JWT_VERIFY_URL`** (default: UAT **`/webhook/verify_jwt`**)  
+   **`POST`** to **`N8N_JWT_VERIFY_URL`** (default: **`https://n8n.easyhomefinance.in/webhook/verify_jwt`**)  
    **Body:** `{ "token": "<JWT>" }`  
    **Headers to n8n:** `Content-Type: application/json`, **`Authorization: Basic …`**, **`Cookie: easygpt_dashboard=1`** — defined in **`n8nJwtVerifyAuth.mjs`** (used by **`server.mjs`**; optional URL override: env **`N8N_JWT_VERIFY_URL`**).
 
