@@ -49,7 +49,8 @@ export async function verifyJwt(token: string): Promise<JwtVerifyResult> {
       body: JSON.stringify({ token: t }),
     });
 
-    const data = await response.json();
+    const raw = await response.json();
+    const data = Array.isArray(raw) ? raw[0] : raw;
 
     if (!response.ok) {
       return {
@@ -86,10 +87,13 @@ export async function verifyJwt(token: string): Promise<JwtVerifyResult> {
           message: 'Invalid JWT payload',
         };
       }
+      const uniqueCode = String((payload as { unique_code?: string }).unique_code ?? '').trim();
+      const sourceRaw = String((data as { source?: unknown }).source ?? 'web').trim().toLowerCase();
+      const source = sourceRaw === 'app' ? 'app' : 'web';
       return {
         valid: true as const,
-        employee_code: 'JWT_USER',
-        source: 'web',
+        employee_code: uniqueCode,
+        source,
       };
     }
 

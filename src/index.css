@@ -85,32 +85,9 @@ body {
   will-change: opacity, transform;
 }
 
-/* Professional animated brand title */
+/* Brand title */
 .brand-title {
-  background: linear-gradient(110deg, #991b1b 0%, #dc2626 35%, #7f1d1d 65%, #ef4444 100%);
-  background-size: 220% auto;
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  animation: brand-gradient-shift 7s ease-in-out infinite;
-  letter-spacing: 0.01em;
-}
-
-@keyframes brand-gradient-shift {
-  0% {
-    background-position: 0% center;
-  }
-  50% {
-    background-position: 100% center;
-  }
-  100% {
-    background-position: 0% center;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .brand-title {
-    animation: none;
-    background-position: 50% center;
-  }
+  color: #ef4444;
+  font-variant-ligatures: none;
+  font-feature-settings: "liga" 0;
 }

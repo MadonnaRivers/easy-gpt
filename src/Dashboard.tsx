@@ -66,10 +66,21 @@ const Dashboard = () => {
     setIsDarkMode(!isDarkMode);
   };
 
+  const getEmployeeCodeForWebhook = () => {
+    const fromFilter = employeeCodeFilter.trim();
+    if (fromFilter) return fromFilter;
+    return localStorage.getItem('employee_code')?.trim() || '';
+  };
+
   const loadConversations = async () => {
     try {
       setIsLoading(true);
-      const res = await fetch(CONVERSATIONS_WEBHOOK_URL, { method: 'GET' });
+      const employeeCode = getEmployeeCodeForWebhook();
+      const url = new URL(CONVERSATIONS_WEBHOOK_URL);
+      if (employeeCode) {
+        url.searchParams.set('employee_code', employeeCode);
+      }
+      const res = await fetch(url.toString(), { method: 'GET' });
       if (!res.ok) throw new Error(`Failed to load conversations: ${res.status}`);
       const data: Conversation[] = await res.json();
       let list = Array.isArray(data) ? data : [];
@@ -96,7 +107,12 @@ const Dashboard = () => {
   const loadConversationMessages = async (conversationId: string) => {
     try {
       setIsLoading(true);
-      const res = await fetch(MESSAGES_WEBHOOK_URL, { method: 'GET' });
+      const employeeCode = getEmployeeCodeForWebhook();
+      const url = new URL(MESSAGES_WEBHOOK_URL);
+      if (employeeCode) {
+        url.searchParams.set('employee_code', employeeCode);
+      }
+      const res = await fetch(url.toString(), { method: 'GET' });
       if (!res.ok) throw new Error(`Failed to load messages: ${res.status}`);
       const data: Message[] = await res.json();
       const list = Array.isArray(data) ? data : [];
@@ -151,14 +167,22 @@ const Dashboard = () => {
 
       // Create FormData to send file to webhook
       const formData = new FormData();
+      const employeeCode = getEmployeeCodeForWebhook();
       formData.append('file', file);
       formData.append('filename', file.name);
       formData.append('fileType', file.type || 'application/octet-stream');
       formData.append('fileSize', file.size.toString());
       formData.append('uploadedBy', localStorage.getItem('chatbot_session_id') || 'unknown');
+      if (employeeCode) {
+        formData.append('employee_code', employeeCode);
+      }
 
       // Send file to webhook
-      const response = await fetch(FILE_UPLOAD_WEBHOOK_URL, {
+      const uploadUrl = new URL(FILE_UPLOAD_WEBHOOK_URL, window.location.origin);
+      if (employeeCode) {
+        uploadUrl.searchParams.set('employee_code', employeeCode);
+      }
+      const response = await fetch(uploadUrl.toString(), {
         method: 'POST',
         body: formData
       });
@@ -248,7 +272,14 @@ const Dashboard = () => {
           : 'bg-white'
       }`}>
         <div className="flex items-center gap-4">
-          <h1 className="text-xl font-bold brand-title">Pragati AI Dashboard</h1>
+          <div className="flex items-center gap-2 min-w-0" aria-label="Pragati AI Dashboard">
+            <h1 className="brand-title text-[14.85px] md:text-[19.8px] font-semibold leading-[1.2] whitespace-nowrap">
+              Pragati AI
+            </h1>
+            <span className={`text-base font-semibold ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+              Dashboard
+            </span>
+          </div>
           <Link
             to="/"
             className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors border text-sm font-medium ${
@@ -258,7 +289,7 @@ const Dashboard = () => {
             }`}
           >
             <MessageSquare size={18} />
-            Pragati AI
+            Chat
           </Link>
         </div>
         <div className="flex items-center gap-3">
@@ -420,7 +451,7 @@ const Dashboard = () => {
                     <h2 className={`text-3xl font-bold mb-2 ${
                       isDarkMode ? 'text-white' : 'text-gray-900'
                     }`}>
-                      Upload Your Files for Pragati AI
+                      Upload your files
                     </h2>
                     <p className={`text-sm ${
                       isDarkMode ? 'text-gray-400' : 'text-gray-500'

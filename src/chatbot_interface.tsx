@@ -760,8 +760,10 @@ const ChatbotInterface = () => {
             ? 'bg-gray-800 border-b border-gray-700'
             : 'bg-white'
         }`}>
-          <div className="flex items-center gap-4">
-            <h1 className="text-xl font-bold brand-title">Pragati AI</h1>
+          <div className="flex items-center gap-4 min-w-0 pr-2">
+            <h1 className="brand-title text-[14.85px] md:text-[19.8px] font-semibold leading-[1.2] whitespace-nowrap">
+              Pragati AI
+            </h1>
           </div>
           <div className="flex items-center gap-3 flex-1 justify-center">
             <button
@@ -826,11 +828,13 @@ const ChatbotInterface = () => {
             messages.map((message) => (
               message.isLoading ? (
                 // Loading state - just "Thinking" text without bubble
-                <div key={message.id} className="flex items-start gap-3 animate-chat-enter">
+                <div key={message.id} className="flex items-start gap-4 animate-chat-enter">
                   {message.type === 'bot' && (
-                    <div className="flex-shrink-0 w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
-                      <div className="w-6 h-6 bg-red-500 rounded-sm flex items-center justify-center">
-                        <svg viewBox="0 0 24 24" fill="white" className="w-4 h-4">
+                    <div className={`flex-shrink-0 w-14 h-14 rounded-full flex items-center justify-center ${
+                      isDarkMode ? 'bg-red-900/35 ring-2 ring-red-500/25' : 'bg-red-100'
+                    }`}>
+                      <div className="w-10 h-10 bg-red-500 rounded-md flex items-center justify-center shadow-sm">
+                        <svg viewBox="0 0 24 24" fill="white" className="w-6 h-6">
                           <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
                         </svg>
                       </div>
@@ -866,13 +870,15 @@ const ChatbotInterface = () => {
                 </div>
               ) : (
                 // Normal message with bubble
-                <div key={message.id} className={`flex items-start gap-3 animate-chat-enter ${
+                <div key={message.id} className={`flex items-start gap-4 animate-chat-enter ${
                   message.type === 'user' ? 'animate-message-slide-up' : ''
                 }`}>
                   {message.type === 'bot' && (
-                    <div className="flex-shrink-0 w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
-                      <div className="w-6 h-6 bg-red-500 rounded-sm flex items-center justify-center">
-                        <svg viewBox="0 0 24 24" fill="white" className="w-4 h-4">
+                    <div className={`flex-shrink-0 w-14 h-14 rounded-full flex items-center justify-center ${
+                      isDarkMode ? 'bg-red-900/35 ring-2 ring-red-500/25' : 'bg-red-100'
+                    }`}>
+                      <div className="w-10 h-10 bg-red-500 rounded-md flex items-center justify-center shadow-sm">
+                        <svg viewBox="0 0 24 24" fill="white" className="w-6 h-6">
                           <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/>
                         </svg>
                       </div>
@@ -925,8 +931,10 @@ const ChatbotInterface = () => {
                   </div>
 
                   {message.type === 'user' && (
-                    <div className="flex-shrink-0 w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
-                      <User size={20} className="text-red-500" />
+                    <div className={`flex-shrink-0 w-14 h-14 rounded-full flex items-center justify-center ${
+                      isDarkMode ? 'bg-red-900/35 ring-2 ring-red-500/25' : 'bg-red-100'
+                    }`}>
+                      <User size={26} className="text-red-500" strokeWidth={2.2} />
                     </div>
                   )}
                 </div>
