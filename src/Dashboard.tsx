@@ -14,6 +14,8 @@ const FILE_UPLOAD_WEBHOOK_URL = import.meta.env.DEV
 // Client-side limit (MB). Server may have a lower limit (413 = Request Entity Too Large).
 const MAX_UPLOAD_FILE_SIZE_MB = 25;
 
+type ConversationWebhookRecord = Conversation & { name?: string };
+
 const Dashboard = () => {
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const stored = localStorage.getItem('darkMode');
@@ -72,6 +74,15 @@ const Dashboard = () => {
     return localStorage.getItem('employee_code')?.trim() || '';
   };
 
+  const normalizeConversationTitle = (conv: ConversationWebhookRecord): Conversation => {
+    const name = (conv.name || '').trim();
+    const title = (conv.title || '').trim();
+    return {
+      ...conv,
+      title: name || title || 'New Chat',
+    };
+  };
+
   const loadConversations = async () => {
     try {
       setIsLoading(true);
@@ -82,8 +93,8 @@ const Dashboard = () => {
       }
       const res = await fetch(url.toString(), { method: 'GET' });
       if (!res.ok) throw new Error(`Failed to load conversations: ${res.status}`);
-      const data: Conversation[] = await res.json();
-      let list = Array.isArray(data) ? data : [];
+      const data: ConversationWebhookRecord[] = await res.json();
+      let list = Array.isArray(data) ? data.map(normalizeConversationTitle) : [];
 
       // Filter by employee_code if provided
       if (employeeCodeFilter.trim()) {
@@ -149,7 +160,16 @@ const Dashboard = () => {
   const formatDate = (dateString: string): string => {
     if (!dateString) return 'Unknown';
     const date = new Date(dateString);
-    return date.toLocaleString();
+    return new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Asia/Kolkata',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    }).format(date);
   };
 
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -271,18 +291,21 @@ const Dashboard = () => {
           ? 'bg-gray-800 border-b border-gray-700'
           : 'bg-white'
       }`}>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 min-w-0" aria-label="Pragati AI Dashboard">
-            <h1 className="brand-title text-[14.85px] md:text-[19.8px] font-semibold leading-[1.2] whitespace-nowrap">
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0" aria-label="Pragati AI Dashboard">
+            <h1 className="brand-title text-[15px] md:text-[18px] font-semibold leading-none whitespace-nowrap">
               Pragati AI
             </h1>
-            <span className={`text-base font-semibold ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+            <span className={`h-5 w-px ${isDarkMode ? 'bg-gray-600' : 'bg-gray-300'}`} />
+            <span className={`text-xs md:text-sm font-semibold tracking-wide uppercase ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
               Dashboard
             </span>
           </div>
+        </div>
+        <div className="flex items-center gap-3">
           <Link
             to="/"
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors border text-sm font-medium ${
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors border text-sm font-semibold ${
               isDarkMode
                 ? 'bg-red-600 hover:bg-red-500 border-red-500 text-white'
                 : 'bg-red-500 hover:bg-red-600 border-red-600 text-white'
@@ -291,8 +314,6 @@ const Dashboard = () => {
             <MessageSquare size={18} />
             Chat
           </Link>
-        </div>
-        <div className="flex items-center gap-3">
           <button
             onClick={toggleViewMode}
             className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors border ${
@@ -349,7 +370,7 @@ const Dashboard = () => {
                 type="text"
                 value={employeeCodeFilter}
                 onChange={(e) => setEmployeeCodeFilter(e.target.value)}
-                placeholder="Filter by Employee Code"
+                placeholder="Enter name"
                 className={`w-full pl-10 pr-8 py-2 rounded-lg text-sm border transition-colors ${
                   isDarkMode
                     ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
