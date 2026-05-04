@@ -21,11 +21,11 @@ body {
   height: 100vh;
 }
 
-/* Smooth message entrance animation (ChatGPT-like) - 60fps optimized */
+/* ── Message entrance ─────────────────────────────────────── */
 @keyframes chat-enter {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -34,45 +34,15 @@ body {
 }
 
 .animate-chat-enter {
-  animation: chat-enter 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: chat-enter 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
   will-change: opacity, transform;
 }
 
-/* Blinking cursor animation for streaming text - 60fps optimized */
-@keyframes blink {
-  0%, 50% {
-    opacity: 1;
-  }
-  51%, 100% {
-    opacity: 0;
-  }
-}
-
-/* Thinking dots animation - ChatGPT-like */
-@keyframes thinking-dot {
-  0%, 60%, 100% {
-    opacity: 0.3;
-    transform: scale(0.8);
-  }
-  30% {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-/* Optimize for GPU acceleration */
-.animate-chat-enter,
-.animate-chat-enter * {
-  backface-visibility: hidden;
-  perspective: 1000px;
-  transform: translateZ(0);
-}
-
-/* Message slide-up animation (ChatGPT-like) */
+/* ── User message slide-up ────────────────────────────────── */
 @keyframes message-slide-up {
   from {
     opacity: 0;
-    transform: translateY(20px) scale(0.95);
+    transform: translateY(14px) scale(0.97);
   }
   to {
     opacity: 1;
@@ -81,13 +51,97 @@ body {
 }
 
 .animate-message-slide-up {
-  animation: message-slide-up 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: message-slide-up 0.28s cubic-bezier(0.16, 1, 0.3, 1) both;
   will-change: opacity, transform;
 }
 
-/* Brand title */
+/* ── Welcome screen fade-in-up (staggered) ─────────────────── */
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.45s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ── Sidebar item entrance ────────────────────────────────── */
+@keyframes sidebar-item {
+  from {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-sidebar-item {
+  animation: sidebar-item 0.2s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* ── Blinking cursor for streaming text ─────────────────────── */
+@keyframes blink {
+  0%, 50% { opacity: 1; }
+  51%, 100% { opacity: 0; }
+}
+
+/* ── Thinking wave dots ──────────────────────────────────── */
+@keyframes thinking-wave {
+  0%, 60%, 100% {
+    transform: translateY(0);
+    opacity: 0.35;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+/* ── Subtle icon float for welcome logo ─────────────────── */
+@keyframes icon-float {
+  0%, 100% { transform: translateY(0px); }
+  50%       { transform: translateY(-5px); }
+}
+
+.animate-icon-float {
+  animation: icon-float 3.5s ease-in-out infinite;
+}
+
+/* ── GPU acceleration for animated elements ─────────────── */
+.animate-chat-enter,
+.animate-message-slide-up,
+.animate-fade-in-up,
+.animate-sidebar-item {
+  backface-visibility: hidden;
+  perspective: 1000px;
+}
+
+/* ── Brand title ─────────────────────────────────────────── */
 .brand-title {
   color: #ef4444;
   font-variant-ligatures: none;
   font-feature-settings: "liga" 0;
+}
+
+/* ── Scrollbar polish ────────────────────────────────────── */
+.overflow-y-auto::-webkit-scrollbar {
+  width: 4px;
+}
+.overflow-y-auto::-webkit-scrollbar-track {
+  background: transparent;
+}
+.overflow-y-auto::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.35);
+  border-radius: 99px;
+}
+.overflow-y-auto::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.6);
 }
