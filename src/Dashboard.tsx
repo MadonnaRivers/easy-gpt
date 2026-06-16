@@ -1,20 +1,45 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { MessageSquare, Trash2, Moon, Sun, Search, X, Upload, FileText, History, CheckCircle, AlertCircle } from 'lucide-react';
+import { MessageSquare, Trash2, Moon, Sun, Search, X, Upload, FileText, History, CheckCircle, AlertCircle, Bot, User, Clock, Hash, Inbox, Sparkles, FileUp } from 'lucide-react';
 import { conversationService, fileHashService, Conversation, Message, FileHash } from './lib/storage';
 
-// Webhook URLs for dashboard data (n8n → MySQL)
+// Single combined webhook: returns one row per message, joined with its
+// conversation + the salesperson name. We group it client-side into the
+// conversation list and per-conversation messages (no separate messages call).
 const CONVERSATIONS_WEBHOOK_URL = 'https://n8n.easyhomefinance.in/webhook/f5c7f525-6af7-47d4-b080-715892d350f6';
-const MESSAGES_WEBHOOK_URL = 'https://n8n.easyhomefinance.in/webhook/48a93076-1569-4e6d-8a2b-d773ef94655b';
 
-// File upload: in dev we use same-origin /api/upload (Vite proxies to n8n) to avoid CORS
-const FILE_UPLOAD_WEBHOOK_URL = import.meta.env.DEV
-  ? '/api/upload'
-  : 'https://n8n.easyhomefinance.in/webhook/bfeed288-3ed4-4428-9b28-b39842289d3c';
+// File upload: always go same-origin via /api/upload to avoid CORS.
+// In dev, Vite proxies it to n8n; in prod, server.mjs forwards it to n8n.
+const FILE_UPLOAD_WEBHOOK_URL = '/api/upload';
 // Client-side limit (MB). Server may have a lower limit (413 = Request Entity Too Large).
 const MAX_UPLOAD_FILE_SIZE_MB = 25;
 
-type ConversationWebhookRecord = Conversation & { name?: string };
+// One row of the combined query (conversations ⨝ messages ⨝ sales_team).
+interface CombinedRow {
+  conversation_id: string;
+  employee_code?: string | null;
+  name?: string | null;
+  title?: string | null;
+  conversation_created_at?: string | null;
+  conversation_updated_at?: string | null;
+  message_id?: string | null;
+  role?: 'user' | 'bot' | null;
+  content?: string | null;
+  message_created_at?: string | null;
+  message_source?: string | null;
+}
+
+// Webhooks may return an empty body (200 with no content). res.json() throws
+// "Unexpected end of JSON input" on that, so parse the text defensively.
+async function parseJsonResponse<T>(res: Response): Promise<T | []> {
+  const text = await res.text();
+  if (!text.trim()) return [];
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return [];
+  }
+}
 
 const Dashboard = () => {
   const [isDarkMode, setIsDarkMode] = useState(() => {
@@ -33,6 +58,8 @@ const Dashboard = () => {
   const [webhookResponse, setWebhookResponse] = useState<any>(null);
   const [showResponseModal, setShowResponseModal] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Messages grouped by conversation_id, built from the combined webhook response.
+  const messagesByConversation = useRef<Record<string, Message[]>>({});
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', isDarkMode);
@@ -74,39 +101,72 @@ const Dashboard = () => {
     return localStorage.getItem('employee_code')?.trim() || '';
   };
 
-  const normalizeConversationTitle = (conv: ConversationWebhookRecord): Conversation => {
-    const name = (conv.name || '').trim();
-    const title = (conv.title || '').trim();
-    return {
-      ...conv,
-      title: name || title || 'New Chat',
-    };
-  };
-
   const loadConversations = async () => {
     try {
       setIsLoading(true);
-      const employeeCode = getEmployeeCodeForWebhook();
       const url = new URL(CONVERSATIONS_WEBHOOK_URL);
-      if (employeeCode) {
-        url.searchParams.set('employee_code', employeeCode);
-      }
       const res = await fetch(url.toString(), { method: 'GET' });
       if (!res.ok) throw new Error(`Failed to load conversations: ${res.status}`);
-      const data: ConversationWebhookRecord[] = await res.json();
-      let list = Array.isArray(data) ? data.map(normalizeConversationTitle) : [];
+      const rows = await parseJsonResponse<CombinedRow[]>(res);
+      const list = Array.isArray(rows) ? rows : [];
+
+      // Collapse the message-level rows into unique conversations + grouped messages.
+      const convMap = new Map<string, Conversation>();
+      const msgMap: Record<string, Message[]> = {};
+
+      for (const row of list) {
+        const convId = row.conversation_id;
+        if (!convId) continue;
+
+        if (!convMap.has(convId)) {
+          const name = (row.name || '').trim();
+          const title = (row.title || '').trim();
+          convMap.set(convId, {
+            id: convId,
+            session_id: '',
+            title: name || title || 'New Chat',
+            employee_code: row.employee_code || undefined,
+            created_at: row.conversation_created_at || undefined,
+            updated_at: row.conversation_updated_at || undefined,
+          });
+        }
+
+        // A LEFT JOIN row with no message has a null message_id — skip those.
+        if (row.message_id && row.role) {
+          (msgMap[convId] ||= []).push({
+            id: row.message_id,
+            conversation_id: convId,
+            role: row.role,
+            content: row.content || '',
+            source: row.message_source || undefined,
+            created_at: row.message_created_at || undefined,
+          });
+        }
+      }
+
+      // Sort each conversation's messages oldest → newest.
+      for (const convId of Object.keys(msgMap)) {
+        msgMap[convId].sort(
+          (a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime()
+        );
+      }
+      messagesByConversation.current = msgMap;
+
+      let conversations = Array.from(convMap.values());
 
       // Filter by employee_code if provided
       if (employeeCodeFilter.trim()) {
-        list = list.filter((c) => (c.employee_code || '').toString().trim() === employeeCodeFilter.trim());
+        conversations = conversations.filter(
+          (c) => (c.employee_code || '').toString().trim() === employeeCodeFilter.trim()
+        );
       }
 
-      list.sort((a, b) => {
+      conversations.sort((a, b) => {
         const aTime = new Date(a.updated_at || a.created_at || 0).getTime();
         const bTime = new Date(b.updated_at || b.created_at || 0).getTime();
         return bTime - aTime;
       });
-      setConversations(list.slice(0, 100));
+      setConversations(conversations.slice(0, 100));
     } catch (error) {
       console.error('Error loading conversations:', error);
       setConversations([]);
@@ -115,30 +175,11 @@ const Dashboard = () => {
     }
   };
 
-  const loadConversationMessages = async (conversationId: string) => {
-    try {
-      setIsLoading(true);
-      const employeeCode = getEmployeeCodeForWebhook();
-      const url = new URL(MESSAGES_WEBHOOK_URL);
-      if (employeeCode) {
-        url.searchParams.set('employee_code', employeeCode);
-      }
-      const res = await fetch(url.toString(), { method: 'GET' });
-      if (!res.ok) throw new Error(`Failed to load messages: ${res.status}`);
-      const data: Message[] = await res.json();
-      const list = Array.isArray(data) ? data : [];
-      const messages = list
-        .filter((m) => m.conversation_id === conversationId)
-        .sort((a, b) => new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime());
-      setConversationMessages(messages);
-      const conv = conversations.find((c) => c.id === conversationId);
-      setSelectedConversation(conv || null);
-    } catch (error) {
-      console.error('Error loading messages:', error);
-      setConversationMessages([]);
-    } finally {
-      setIsLoading(false);
-    }
+  // Messages already arrived with the combined webhook; just read from the cache.
+  const loadConversationMessages = (conversationId: string) => {
+    setConversationMessages(messagesByConversation.current[conversationId] || []);
+    const conv = conversations.find((c) => c.id === conversationId);
+    setSelectedConversation(conv || null);
   };
 
   const handleDeleteConversation = async (conversationId: string) => {
@@ -280,108 +321,147 @@ const Dashboard = () => {
   };
 
   return (
-    <div className={`h-screen w-full overflow-hidden transition-colors ${
-      isDarkMode 
-        ? 'bg-gray-900' 
-        : 'bg-gray-50'
-    }`}>
-      {/* Header */}
-      <div className={`shadow-sm px-6 py-4 flex items-center justify-between transition-colors ${
+    <div
+      className={`h-screen w-full overflow-hidden transition-colors ${
         isDarkMode
-          ? 'bg-gray-800 border-b border-gray-700'
-          : 'bg-white'
-      }`}>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-3 min-w-0" aria-label="Pragati AI Dashboard">
-            <h1 className="brand-title text-[15px] md:text-[18px] font-semibold leading-none whitespace-nowrap">
+          ? 'bg-gradient-to-b from-gray-950 via-gray-900 to-gray-950 text-gray-100'
+          : 'bg-gradient-to-b from-gray-50 via-white to-gray-50 text-gray-900'
+      }`}
+    >
+      {/* Header */}
+      <header
+        className={`sticky top-0 z-30 px-5 md:px-6 py-3.5 flex items-center justify-between backdrop-blur-xl transition-colors ${
+          isDarkMode
+            ? 'bg-gray-900/80 border-b border-white/10'
+            : 'bg-white/80 border-b border-gray-200/80 shadow-[0_1px_3px_rgba(0,0,0,0.04)]'
+        }`}
+      >
+        <div className="flex items-center gap-3 min-w-0" aria-label="Pragati AI Dashboard">
+          <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-red-500 to-rose-600 text-white shadow-lg shadow-red-500/30">
+            <Sparkles size={18} />
+          </div>
+          <div className="flex items-center gap-3 min-w-0">
+            <h1 className="brand-title text-[16px] md:text-[19px] font-bold leading-none whitespace-nowrap tracking-tight">
               Pragati AI
             </h1>
-            <span className={`h-5 w-px ${isDarkMode ? 'bg-gray-600' : 'bg-gray-300'}`} />
-            <span className={`text-xs md:text-sm font-semibold tracking-wide uppercase ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+            <span className={`h-5 w-px ${isDarkMode ? 'bg-white/15' : 'bg-gray-300'}`} />
+            <span className={`text-xs md:text-sm font-semibold tracking-[0.12em] uppercase ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
               Dashboard
             </span>
           </div>
         </div>
-        <div className="flex items-center gap-3">
-          <Link
-            to="/"
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors border text-sm font-semibold ${
-              isDarkMode
-                ? 'bg-red-600 hover:bg-red-500 border-red-500 text-white'
-                : 'bg-red-500 hover:bg-red-600 border-red-600 text-white'
-            }`}
-          >
-            <MessageSquare size={18} />
-            Chat
-          </Link>
+
+        <div className="flex items-center gap-2.5">
+          {/* Segmented view toggle */}
+          <div className={`hidden sm:flex items-center gap-1 p-1 rounded-xl ${isDarkMode ? 'bg-white/5 ring-1 ring-white/10' : 'bg-gray-100 ring-1 ring-gray-200'}`}>
+            <button
+              onClick={() => setViewMode('conversations')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                viewMode === 'conversations'
+                  ? isDarkMode
+                    ? 'bg-gray-700 text-white shadow'
+                    : 'bg-white text-gray-900 shadow-sm'
+                  : isDarkMode
+                    ? 'text-gray-400 hover:text-gray-200'
+                    : 'text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              <History size={16} /> History
+            </button>
+            <button
+              onClick={() => setViewMode('upload')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                viewMode === 'upload'
+                  ? isDarkMode
+                    ? 'bg-gray-700 text-white shadow'
+                    : 'bg-white text-gray-900 shadow-sm'
+                  : isDarkMode
+                    ? 'text-gray-400 hover:text-gray-200'
+                    : 'text-gray-500 hover:text-gray-800'
+              }`}
+            >
+              <Upload size={16} /> Upload
+            </button>
+          </div>
+
+          {/* Mobile view toggle */}
           <button
             onClick={toggleViewMode}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors border ${
-              isDarkMode
-                ? 'bg-gray-700 hover:bg-gray-600 border-gray-600 text-white'
-                : 'bg-gray-100 hover:bg-gray-200 border-gray-200 text-gray-700'
+            aria-label="Toggle view"
+            className={`sm:hidden grid h-9 w-9 place-items-center rounded-xl border transition-colors ${
+              isDarkMode ? 'bg-white/5 border-white/10 text-white hover:bg-white/10' : 'bg-gray-100 border-gray-200 text-gray-700 hover:bg-gray-200'
             }`}
           >
             {viewMode === 'conversations' ? <Upload size={18} /> : <History size={18} />}
-            <span className="text-sm font-medium">
-              {viewMode === 'conversations' ? 'Upload Documents' : 'Conversation History'}
-            </span>
           </button>
+
           <button
             onClick={toggleDarkMode}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg transition-colors border ${
-              isDarkMode
-                ? 'bg-gray-700 hover:bg-gray-600 border-gray-600 text-white'
-                : 'bg-gray-100 hover:bg-gray-200 border-gray-200 text-gray-700'
+            aria-label="Toggle theme"
+            className={`grid h-9 w-9 place-items-center rounded-xl border transition-colors ${
+              isDarkMode ? 'bg-white/5 border-white/10 text-amber-300 hover:bg-white/10' : 'bg-gray-100 border-gray-200 text-gray-600 hover:bg-gray-200'
             }`}
           >
             {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
-            <span className="text-sm font-medium">{isDarkMode ? 'Light' : 'Dark'}</span>
           </button>
+
+          <Link
+            to="/"
+            className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-sm font-semibold text-white bg-gradient-to-br from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 shadow-lg shadow-red-500/25 transition-all active:scale-95"
+          >
+            <MessageSquare size={17} />
+            <span className="hidden sm:inline">Chat</span>
+          </Link>
         </div>
-      </div>
+      </header>
 
       {/* Main Content */}
-      <div className="flex h-[calc(100vh-73px)]">
+      <div className="flex h-[calc(100vh-65px)]">
         {/* Left Sidebar - Conversations List (hidden in upload mode) */}
         {viewMode === 'conversations' && (
-        <div className={`w-80 border-r transition-colors ${
-          isDarkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'
+        <aside className={`w-80 flex flex-col border-r transition-colors ${
+          isDarkMode ? 'border-white/10 bg-gray-900/40' : 'border-gray-200 bg-white/60'
         }`}>
           {/* Header with Filter */}
           <div className={`p-4 border-b transition-colors ${
-            isDarkMode ? 'border-gray-700' : 'border-gray-200'
+            isDarkMode ? 'border-white/10' : 'border-gray-200'
           }`}>
-            <div className={`text-sm font-semibold mb-3 ${
-              isDarkMode ? 'text-white' : 'text-gray-900'
-            }`}>
-              Conversation History
+            <div className="flex items-center justify-between mb-3">
+              <div className={`text-sm font-semibold ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                Conversation History
+              </div>
+              <span className={`inline-flex items-center justify-center min-w-[1.5rem] h-6 px-2 rounded-full text-xs font-semibold ${
+                isDarkMode ? 'bg-red-500/15 text-red-300' : 'bg-red-50 text-red-600'
+              }`}>
+                {conversations.length}
+              </span>
             </div>
-            
+
             {/* Employee Code Filter */}
             <div className="relative">
-              <Search 
-                size={16} 
+              <Search
+                size={16}
                 className={`absolute left-3 top-1/2 transform -translate-y-1/2 ${
                   isDarkMode ? 'text-gray-400' : 'text-gray-500'
-                }`} 
+                }`}
               />
               <input
                 type="text"
                 value={employeeCodeFilter}
                 onChange={(e) => setEmployeeCodeFilter(e.target.value)}
-                placeholder="Enter name"
-                className={`w-full pl-10 pr-8 py-2 rounded-lg text-sm border transition-colors ${
+                placeholder="Search by name"
+                className={`w-full pl-10 pr-8 py-2.5 rounded-xl text-sm border transition-all ${
                   isDarkMode
-                    ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400'
-                    : 'bg-gray-50 border-gray-300 text-gray-900 placeholder-gray-500'
-                } focus:outline-none focus:ring-2 focus:ring-red-500`}
+                    ? 'bg-white/5 border-white/10 text-white placeholder-gray-500 focus:bg-white/10'
+                    : 'bg-gray-50 border-gray-200 text-gray-900 placeholder-gray-400 focus:bg-white'
+                } focus:outline-none focus:ring-2 focus:ring-red-500/60 focus:border-transparent`}
               />
               {employeeCodeFilter && (
                 <button
                   onClick={() => setEmployeeCodeFilter('')}
-                  className={`absolute right-2 top-1/2 transform -translate-y-1/2 p-1 rounded ${
-                    isDarkMode ? 'hover:bg-gray-600 text-gray-400' : 'hover:bg-gray-200 text-gray-500'
+                  aria-label="Clear filter"
+                  className={`absolute right-2 top-1/2 transform -translate-y-1/2 p-1 rounded-lg ${
+                    isDarkMode ? 'hover:bg-white/10 text-gray-400' : 'hover:bg-gray-200 text-gray-500'
                   }`}
                 >
                   <X size={14} />
@@ -391,50 +471,72 @@ const Dashboard = () => {
           </div>
 
           {/* Conversations List */}
-          <div className="overflow-y-auto h-[calc(100%-120px)]">
-            <div className="p-4">
+          <div className="overflow-y-auto flex-1">
+            <div className="p-3">
               {isLoading ? (
-                <div className="text-center py-8">
-                  <div className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                    Loading conversations...
-                  </div>
+                <div className="space-y-2">
+                  {[0, 1, 2, 3, 4].map((i) => (
+                    <div
+                      key={i}
+                      className={`h-[60px] rounded-xl animate-pulse ${isDarkMode ? 'bg-white/5' : 'bg-gray-100'}`}
+                    />
+                  ))}
                 </div>
               ) : conversations.length === 0 ? (
-                <div className="text-center py-8">
-                  <div className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                    {employeeCodeFilter ? 'No conversations found for this employee code' : 'No conversations yet'}
+                <div className="flex flex-col items-center text-center py-14 px-4">
+                  <div className={`grid h-12 w-12 place-items-center rounded-2xl mb-3 ${isDarkMode ? 'bg-white/5 text-gray-500' : 'bg-gray-100 text-gray-400'}`}>
+                    <MessageSquare size={22} />
+                  </div>
+                  <div className={`text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                    {employeeCodeFilter ? 'No matches found' : 'No conversations yet'}
+                  </div>
+                  <div className={`text-xs mt-1 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                    {employeeCodeFilter ? 'Try a different name' : 'Conversations will appear here'}
                   </div>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {conversations.map((conv) => (
+                <div className="space-y-1.5">
+                  {conversations.map((conv) => {
+                    const isActive = selectedConversation?.id === conv.id;
+                    return (
                     <div
                       key={conv.id}
                       onClick={() => loadConversationMessages(conv.id!)}
-                      className={`p-3 rounded-lg cursor-pointer transition-colors ${
-                        selectedConversation?.id === conv.id
+                      className={`group relative p-3 pl-4 rounded-xl cursor-pointer transition-all ${
+                        isActive
                           ? isDarkMode
-                            ? 'bg-red-500/20 border border-red-500/50'
-                            : 'bg-red-50 border border-red-200'
+                            ? 'bg-red-500/15 ring-1 ring-red-500/40'
+                            : 'bg-red-50 ring-1 ring-red-200'
                           : isDarkMode
-                            ? 'hover:bg-gray-700'
-                            : 'hover:bg-gray-50'
+                            ? 'hover:bg-white/5'
+                            : 'hover:bg-gray-100/70'
                       }`}
                     >
-                      <div className="flex items-start justify-between gap-2">
+                      <span className={`absolute left-0 top-1/2 -translate-y-1/2 h-7 w-1 rounded-full transition-all ${
+                        isActive ? 'bg-gradient-to-b from-red-500 to-rose-600' : 'bg-transparent'
+                      }`} />
+                      <div className="flex items-start gap-3">
+                        <div className={`mt-0.5 grid h-8 w-8 flex-shrink-0 place-items-center rounded-lg ${
+                          isActive
+                            ? 'bg-gradient-to-br from-red-500 to-rose-600 text-white'
+                            : isDarkMode ? 'bg-white/5 text-gray-400' : 'bg-gray-100 text-gray-500'
+                        }`}>
+                          <MessageSquare size={15} />
+                        </div>
                         <div className="flex-1 min-w-0">
-                          <div className={`font-medium text-sm truncate ${
-                            isDarkMode ? 'text-white' : 'text-gray-900'
-                          }`}>
+                          <div className={`font-medium text-sm truncate ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
                             {conv.title}
                           </div>
-                          <div className={`text-xs mt-1 ${
-                            isDarkMode ? 'text-gray-400' : 'text-gray-500'
-                          }`}>
+                          <div className={`flex items-center flex-wrap gap-x-2 gap-y-1 text-xs mt-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                             {conv.employee_code && (
-                              <span className="mr-2">Code: {conv.employee_code}</span>
+                              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md ${isDarkMode ? 'bg-white/5' : 'bg-gray-100'}`}>
+                                <Hash size={10} />{conv.employee_code}
+                              </span>
                             )}
-                            {formatDate(conv.updated_at || conv.created_at || '')}
+                            <span className="inline-flex items-center gap-1">
+                              <Clock size={10} />
+                              {formatDate(conv.updated_at || conv.created_at || '')}
+                            </span>
                           </div>
                         </div>
                         <button
@@ -442,56 +544,59 @@ const Dashboard = () => {
                             e.stopPropagation();
                             handleDeleteConversation(conv.id!);
                           }}
-                          className={`p-1 rounded hover:bg-red-500/20 transition-colors ${
-                            isDarkMode ? 'text-gray-400 hover:text-red-400' : 'text-gray-500 hover:text-red-600'
+                          aria-label="Delete conversation"
+                          className={`p-1.5 rounded-lg opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all ${
+                            isDarkMode ? 'hover:bg-red-500/20 text-gray-400 hover:text-red-400' : 'hover:bg-red-50 text-gray-400 hover:text-red-600'
                           }`}
                         >
                           <Trash2 size={14} />
                         </button>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
           </div>
-        </div>
+        </aside>
         )}
 
         {/* Right Panel - Conversation Details or Upload Interface */}
-        <div className={`flex-1 overflow-y-auto transition-colors ${
-          isDarkMode ? 'bg-gray-900' : 'bg-gray-50'
-        }`}>
+        <div className="flex-1 overflow-y-auto">
           {viewMode === 'upload' ? (
             /* Upload Document Interface */
-            <div className="h-full flex flex-col">
+            <div className="min-h-full flex flex-col">
               {/* Upload Section */}
-              <div className="flex-1 flex items-center justify-center p-8">
-                <div className="max-w-2xl w-full">
+              <div className="flex-1 flex items-center justify-center p-6 md:p-10">
+                <div className="max-w-2xl w-full animate-fade-in-up">
                   <div className="text-center mb-8">
-                    <h2 className={`text-3xl font-bold mb-2 ${
+                    <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold mb-4 ${
+                      isDarkMode ? 'bg-red-500/15 text-red-300' : 'bg-red-50 text-red-600'
+                    }`}>
+                      <Sparkles size={13} /> Knowledge Base
+                    </div>
+                    <h2 className={`text-3xl font-bold mb-2 tracking-tight ${
                       isDarkMode ? 'text-white' : 'text-gray-900'
                     }`}>
                       Upload your files
                     </h2>
-                    <p className={`text-sm ${
-                      isDarkMode ? 'text-gray-400' : 'text-gray-500'
-                    }`}>
-                      Upload documents to enhance your chatbot's knowledge base
+                    <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                      Add documents to enrich your chatbot&apos;s knowledge base
                     </p>
                   </div>
 
                   {/* Upload Area */}
                   <div
                     onClick={() => !isUploading && fileInputRef.current?.click()}
-                    className={`border-2 border-dashed rounded-lg p-12 text-center transition-colors ${
+                    className={`group relative overflow-hidden rounded-2xl p-12 text-center transition-all ${
                       isUploading
-                        ? 'opacity-50 cursor-not-allowed'
-                        : 'cursor-pointer hover:border-red-500'
+                        ? 'opacity-70 cursor-not-allowed'
+                        : 'cursor-pointer hover:-translate-y-0.5'
                     } ${
                       isDarkMode
-                        ? 'border-gray-700 hover:border-gray-600 bg-gray-800/50'
-                        : 'border-gray-300 hover:border-gray-400 bg-white'
+                        ? 'bg-white/5 ring-1 ring-dashed ring-white/15 hover:ring-red-500/60 hover:bg-white/[0.07]'
+                        : 'bg-white ring-1 ring-dashed ring-gray-300 hover:ring-red-400 hover:shadow-lg hover:shadow-red-500/5'
                     }`}
                   >
                     <input
@@ -502,26 +607,26 @@ const Dashboard = () => {
                       disabled={isUploading}
                     />
                     <div className="flex flex-col items-center">
-                      <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 ${
-                        isDarkMode ? 'bg-gray-700' : 'bg-gray-100'
+                      <div className={`w-16 h-16 rounded-2xl flex items-center justify-center mb-4 transition-transform group-hover:scale-105 ${
+                        isUploading
+                          ? 'bg-gradient-to-br from-red-500 to-rose-600 text-white'
+                          : isDarkMode ? 'bg-white/10 text-gray-300' : 'bg-red-50 text-red-500'
                       }`}>
-                        <Upload size={32} className={isDarkMode ? 'text-gray-400' : 'text-gray-500'} />
+                        {isUploading
+                          ? <Upload size={30} className="animate-bounce" />
+                          : <FileUp size={30} />}
                       </div>
                       {isUploading ? (
-                        <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                          Uploading to webhook...
+                        <p className={`text-sm font-medium ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                          Uploading your document…
                         </p>
                       ) : (
                         <>
-                          <p className={`text-lg font-medium mb-2 ${
-                            isDarkMode ? 'text-white' : 'text-gray-900'
-                          }`}>
-                            Click to upload or drag and drop
+                          <p className={`text-lg font-semibold mb-1 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                            Click to browse files
                           </p>
-                          <p className={`text-sm ${
-                            isDarkMode ? 'text-gray-400' : 'text-gray-500'
-                          }`}>
-                            Supported formats: TXT, PDF, DOC, DOCX, and more
+                          <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                            TXT, PDF, DOC, DOCX and more · up to {MAX_UPLOAD_FILE_SIZE_MB} MB
                           </p>
                         </>
                       )}
@@ -531,57 +636,64 @@ const Dashboard = () => {
               </div>
 
               {/* File History Section */}
-              <div className={`border-t ${
-                isDarkMode ? 'border-gray-700 bg-gray-800' : 'border-gray-200 bg-white'
+              <div className={`border-t backdrop-blur-sm ${
+                isDarkMode ? 'border-white/10 bg-gray-900/40' : 'border-gray-200 bg-white/60'
               }`}>
-                <div className="p-6">
-                  <h3 className={`text-lg font-semibold mb-4 ${
-                    isDarkMode ? 'text-white' : 'text-gray-900'
-                  }`}>
-                    Upload History
-                  </h3>
-                  
+                <div className="p-6 max-w-3xl mx-auto w-full">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className={`text-sm font-semibold uppercase tracking-wide ${isDarkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+                      Upload History
+                    </h3>
+                    {uploadedFiles.length > 0 && (
+                      <span className={`text-xs font-medium ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                        {uploadedFiles.length} file{uploadedFiles.length === 1 ? '' : 's'}
+                      </span>
+                    )}
+                  </div>
+
                   {uploadedFiles.length === 0 ? (
-                    <div className="text-center py-8">
+                    <div className="flex flex-col items-center text-center py-10">
+                      <div className={`grid h-12 w-12 place-items-center rounded-2xl mb-3 ${isDarkMode ? 'bg-white/5 text-gray-500' : 'bg-gray-100 text-gray-400'}`}>
+                        <Inbox size={22} />
+                      </div>
                       <div className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                         No files uploaded yet
                       </div>
                     </div>
                   ) : (
-                    <div className="space-y-3 max-h-64 overflow-y-auto">
+                    <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
                       {uploadedFiles.map((file) => (
                         <div
                           key={file.id || `file-${file.file_name}`}
-                          className={`p-4 rounded-lg border ${
+                          className={`group p-3.5 rounded-xl border transition-colors ${
                             isDarkMode
-                              ? 'bg-gray-800 border-gray-700'
-                              : 'bg-gray-50 border-gray-200'
+                              ? 'bg-white/[0.03] border-white/10 hover:bg-white/[0.06]'
+                              : 'bg-white border-gray-200 hover:border-gray-300'
                           }`}
                         >
                           <div className="flex items-start justify-between gap-4">
                             <div className="flex items-start gap-3 flex-1 min-w-0">
-                              <div className={`w-10 h-10 rounded-lg flex items-center justify-center flex-shrink-0 ${
-                                isDarkMode ? 'bg-gray-700' : 'bg-gray-200'
+                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                                isDarkMode ? 'bg-red-500/15 text-red-300' : 'bg-red-50 text-red-500'
                               }`}>
-                                <FileText size={20} className={isDarkMode ? 'text-gray-400' : 'text-gray-500'} />
+                                <FileText size={20} />
                               </div>
                               <div className="flex-1 min-w-0">
-                                <div className={`font-medium text-sm truncate ${
-                                  isDarkMode ? 'text-white' : 'text-gray-900'
-                                }`}>
+                                <div className={`font-medium text-sm truncate ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
                                   {file.file_name}
                                 </div>
-                                <div className={`text-xs mt-1 ${
-                                  isDarkMode ? 'text-gray-400' : 'text-gray-500'
-                                }`}>
-                                  ID: {file.id} {file.created_at && `• ${formatDate(file.created_at)}`}
+                                <div className={`flex items-center gap-1 text-xs mt-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                  {file.created_at && (
+                                    <><Clock size={10} /> {formatDate(file.created_at)}</>
+                                  )}
                                 </div>
                               </div>
                             </div>
                             <button
                               onClick={() => handleDeleteFile(file.id!)}
-                              className={`p-2 rounded hover:bg-red-500/20 transition-colors flex-shrink-0 ${
-                                isDarkMode ? 'text-gray-400 hover:text-red-400' : 'text-gray-500 hover:text-red-600'
+                              aria-label="Remove file"
+                              className={`p-2 rounded-lg opacity-0 group-hover:opacity-100 focus:opacity-100 transition-all flex-shrink-0 ${
+                                isDarkMode ? 'hover:bg-red-500/20 text-gray-400 hover:text-red-400' : 'hover:bg-red-50 text-gray-400 hover:text-red-600'
                               }`}
                             >
                               <Trash2 size={16} />
@@ -595,93 +707,94 @@ const Dashboard = () => {
               </div>
             </div>
           ) : selectedConversation ? (
-            <div className="p-6">
-              <div className={`mb-6 pb-4 border-b ${
-                isDarkMode ? 'border-gray-700' : 'border-gray-200'
+            <div className="max-w-3xl mx-auto p-5 md:p-8">
+              <div className={`mb-6 p-5 rounded-2xl border ${
+                isDarkMode ? 'bg-white/[0.03] border-white/10' : 'bg-white border-gray-200 shadow-sm'
               }`}>
-                <h2 className={`text-2xl font-bold mb-2 ${
-                  isDarkMode ? 'text-white' : 'text-gray-900'
-                }`}>
+                <h2 className={`text-2xl font-bold mb-3 tracking-tight ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
                   {selectedConversation.title}
                 </h2>
-                <div className={`text-sm ${
-                  isDarkMode ? 'text-gray-400' : 'text-gray-500'
-                }`}>
+                <div className="flex flex-wrap items-center gap-2 text-xs">
                   {selectedConversation.employee_code && (
-                    <span className="mr-3">Employee Code: <strong>{selectedConversation.employee_code}</strong></span>
+                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-lg font-medium ${isDarkMode ? 'bg-red-500/15 text-red-300' : 'bg-red-50 text-red-600'}`}>
+                      <Hash size={11} />{selectedConversation.employee_code}
+                    </span>
                   )}
                   {selectedConversation.source && (
-                    <span className="mr-3">Source: <strong>{selectedConversation.source}</strong></span>
+                    <span className={`inline-flex items-center px-2 py-1 rounded-lg font-medium ${isDarkMode ? 'bg-white/5 text-gray-300' : 'bg-gray-100 text-gray-600'}`}>
+                      {selectedConversation.source}
+                    </span>
                   )}
-                  Created: {formatDate(selectedConversation.created_at || '')} • 
-                  Updated: {formatDate(selectedConversation.updated_at || '')}
+                  <span className={`inline-flex items-center gap-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <Clock size={11} /> {formatDate(selectedConversation.updated_at || selectedConversation.created_at || '')}
+                  </span>
                 </div>
               </div>
 
               {isLoading ? (
-                <div className="text-center py-12">
-                  <div className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                    Loading messages...
-                  </div>
+                <div className="space-y-4">
+                  {[0, 1, 2].map((i) => (
+                    <div key={i} className={`h-20 rounded-2xl animate-pulse ${isDarkMode ? 'bg-white/5' : 'bg-gray-100'}`} />
+                  ))}
                 </div>
               ) : conversationMessages.length === 0 ? (
-                <div className="text-center py-12">
+                <div className="flex flex-col items-center text-center py-16">
+                  <div className={`grid h-12 w-12 place-items-center rounded-2xl mb-3 ${isDarkMode ? 'bg-white/5 text-gray-500' : 'bg-gray-100 text-gray-400'}`}>
+                    <MessageSquare size={22} />
+                  </div>
                   <div className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                     No messages in this conversation
                   </div>
                 </div>
               ) : (
-                <div className="space-y-4">
-                  {conversationMessages.map((msg) => (
-                    <div
-                      key={msg.id}
-                      className={`p-4 rounded-lg ${
-                        msg.role === 'user'
+                <div className="space-y-3">
+                  {conversationMessages.map((msg) => {
+                    const isUser = msg.role === 'user';
+                    return (
+                    <div key={msg.id} className={`flex gap-3 ${isUser ? 'flex-row-reverse' : 'flex-row'}`}>
+                      <div className={`mt-0.5 grid h-8 w-8 flex-shrink-0 place-items-center rounded-lg text-white ${
+                        isUser ? 'bg-gradient-to-br from-red-500 to-rose-600' : isDarkMode ? 'bg-gray-700' : 'bg-gray-800'
+                      }`}>
+                        {isUser ? <User size={15} /> : <Bot size={15} />}
+                      </div>
+                      <div className={`max-w-[80%] p-4 rounded-2xl ${
+                        isUser
                           ? isDarkMode
-                            ? 'bg-red-500/20 border border-red-500/30'
-                            : 'bg-red-50 border border-red-200'
+                            ? 'bg-red-500/15 border border-red-500/25 rounded-tr-sm'
+                            : 'bg-red-50 border border-red-200 rounded-tr-sm'
                           : isDarkMode
-                            ? 'bg-gray-800 border border-gray-700'
-                            : 'bg-white border border-gray-200'
-                      }`}
-                    >
-                      <div className={`text-xs font-semibold mb-2 ${
-                        isDarkMode ? 'text-gray-400' : 'text-gray-500'
+                            ? 'bg-white/[0.04] border border-white/10 rounded-tl-sm'
+                            : 'bg-white border border-gray-200 shadow-sm rounded-tl-sm'
                       }`}>
-                        {msg.role === 'user' ? 'User' : 'Bot'}
-                      </div>
-                      <div className={`text-sm whitespace-pre-wrap ${
-                        isDarkMode ? 'text-gray-100' : 'text-gray-900'
-                      }`}>
-                        {msg.content}
-                      </div>
-                      <div className={`text-xs mt-2 ${
-                        isDarkMode ? 'text-gray-500' : 'text-gray-400'
-                      }`}>
-                        {formatDate(msg.created_at || '')}
+                        <div className={`text-[11px] font-semibold uppercase tracking-wide mb-1.5 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                          {isUser ? 'User' : 'Bot'}
+                        </div>
+                        <div className={`text-sm whitespace-pre-wrap leading-relaxed ${isDarkMode ? 'text-gray-100' : 'text-gray-900'}`}>
+                          {msg.content}
+                        </div>
+                        <div className={`text-[11px] mt-2 ${isDarkMode ? 'text-gray-500' : 'text-gray-400'}`}>
+                          {formatDate(msg.created_at || '')}
+                        </div>
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
           ) : (
-            <div className="flex items-center justify-center h-full">
-              <div className="text-center">
-                <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-4 mx-auto ${
-                  isDarkMode ? 'bg-gray-800' : 'bg-gray-200'
+            <div className="flex items-center justify-center h-full p-6">
+              <div className="text-center animate-fade-in-up">
+                <div className={`w-20 h-20 rounded-3xl flex items-center justify-center mb-5 mx-auto ${
+                  isDarkMode ? 'bg-white/5 text-gray-500' : 'bg-white shadow-sm text-gray-400'
                 }`}>
-                  <MessageSquare size={32} className={isDarkMode ? 'text-gray-400' : 'text-gray-500'} />
+                  <MessageSquare size={36} className="animate-icon-float" />
                 </div>
-                <h3 className={`text-lg font-semibold mb-2 ${
-                  isDarkMode ? 'text-white' : 'text-gray-900'
-                }`}>
-                  Select a conversation to view details
+                <h3 className={`text-lg font-semibold mb-2 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
+                  Select a conversation
                 </h3>
-                <p className={`text-sm ${
-                  isDarkMode ? 'text-gray-400' : 'text-gray-500'
-                }`}>
-                  Choose a conversation from the sidebar to see its messages
+                <p className={`text-sm max-w-xs mx-auto ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                  Choose a conversation from the sidebar to read its messages
                 </p>
               </div>
             </div>

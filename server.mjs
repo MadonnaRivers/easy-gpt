@@ -27,6 +27,11 @@ const DASHBOARD_COOKIE = 'easygpt_dashboard';
 const N8N_JWT_VERIFY_URL =
   process.env.N8N_JWT_VERIFY_URL || N8N_JWT_VERIFY_URL_DEFAULT;
 
+/** Forward file uploads here so the browser never calls n8n directly (CORS). */
+const N8N_FILE_UPLOAD_URL =
+  process.env.N8N_FILE_UPLOAD_URL ||
+  'https://n8n.easyhomefinance.in/webhook/bfeed288-3ed4-4428-9b28-b39842289d3c';
+
 const SESSION_TIMEOUT_HTML = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -127,6 +132,41 @@ app.post('/api/verify-jwt', async (req, res) => {
       message: e instanceof Error ? e.message : String(e),
     });
   }
+});
+
+// Proxy multipart file uploads to n8n server-side (same-origin → no CORS).
+// express.json()/urlencoded() do not consume multipart/form-data, so the raw
+// request stream is still intact here and we forward it verbatim.
+app.post('/api/upload', (req, res) => {
+  const chunks = [];
+  req.on('data', (chunk) => chunks.push(chunk));
+  req.on('error', () =>
+    res.status(502).json({ error: 'upload_read_error', message: 'Failed to read upload stream' })
+  );
+  req.on('end', async () => {
+    try {
+      const url = new URL(N8N_FILE_UPLOAD_URL);
+      const employeeCode = req.query.employee_code;
+      if (typeof employeeCode === 'string' && employeeCode) {
+        url.searchParams.set('employee_code', employeeCode);
+      }
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': req.headers['content-type'] || 'application/octet-stream' },
+        body: Buffer.concat(chunks),
+      });
+      const text = await r.text();
+      res
+        .status(r.status)
+        .type(r.headers.get('content-type') || 'text/plain')
+        .send(text);
+    } catch (e) {
+      res.status(502).json({
+        error: 'upload_proxy_error',
+        message: e instanceof Error ? e.message : String(e),
+      });
+    }
+  });
 });
 
 app.post('/load', (req, res) => {
